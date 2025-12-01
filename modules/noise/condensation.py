@@ -77,24 +77,20 @@ def tag_condensed(mod: Module) -> None:
     prefixes = repo.get_connection().execute(query_prefix_hosts()).df()
     model_condensation(prefixes)
     desc = describe_condensation(prefixes)
-    save(repo.get_connection(), "condensation_summary", desc)
+    save(repo.get_connection(), "condensation_summary", desc, force=True)
 
     # Filter rows instead of just prefixes
     dense_df = prefixes[prefixes["p_dense"] > 0.95]
 
     with tqdm(total=len(dense_df), desc="condensation") as pbar:
         for _, row in dense_df.iterrows():
-            tags = []
             hosts = repo.query(query_records("hosts", prefix=row["prefix"]))
             for h in hosts:
-                # row["p_dense"] is now available
-                # TODO: Need to add the module
-                tags.append(mod.make_tag(
+                mod.store(mod.make_tag(
                     h["ip"],
                     "dense",
                     details=f'probability: {row["p_dense"]:.3f}'
                 ))
-            mod.save(*tags)
             pbar.update(1)
 
 def condensation_init(mod: Module) -> None:

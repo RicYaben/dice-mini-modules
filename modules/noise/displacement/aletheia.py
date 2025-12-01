@@ -28,13 +28,7 @@ def aletheia_tag(mod: Module) -> None:
     )
 
     for q, d in [(q_not, "0 window"), (q_python, "python"), (q_cloud, "cloud"), (q_cloud_2, "cloud")]:
-        hosts = mod.query(q)
-        tags = []
-        for h in hosts:
-            t = mod.make_tag(h["saddr"], "aletheia", details=d, port=h["dport"])
-            tags.append(t)
-        mod.save(*tags)
-
+        mod.itemize(q, lambda r: mod.store(mod.make_tag(r["saddr"], "aletheia", d, port=r["sport"])), orient="rows")
 
 def aletheia_init(mod: Module) -> None:
     mod.register_tag("aletheia", "OT fingerprinting method from A. Cordeiro et al.")

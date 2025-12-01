@@ -11,13 +11,12 @@ def iec104_cls_init(mod: Module) -> None:
 
 def iec104_cls_handler(mod: Module) -> None:
     def handler(df: pd.DataFrame):
-        labs = []
         for fp in df[df["data_asdus"].notna()].itertuples(index=False):
-            labs.append(mod.make_label(str(fp.id), "anonymous-connection"))
-        mod.save(*labs)
+            mod.store(mod.make_label(str(fp.id), "anonymous-connection"))
 
-    q =query_db("fingerprints", protocol="iec104")
-    mod.with_pbar(handler, q)
+    q = query_db("fingerprints", protocol="iec104")
+    mod.itemize(q, handler, orient="dataframe")
+
 
 def make_classifier() -> Module:
     return new_module(CLASSIFIER, "iec104", iec104_cls_handler, iec104_cls_init)

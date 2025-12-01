@@ -137,6 +137,7 @@ def parse_list_identity(data: str, vendors: pd.DataFrame, devices: pd.DataFrame)
         "session": header["session"],
         "status": header["status"],
         "options": header["options"],
+        "identity": None
     }
 
     if not payload:
@@ -153,7 +154,8 @@ def parse_list_identity(data: str, vendors: pd.DataFrame, devices: pd.DataFrame)
         offset += item_length
 
         if item_type == 0x0C:  # Identity item
-            items.append(parse_list_identity_item(item_data, vendors, devices))
+            identity = parse_list_identity_item(item_data, vendors, devices)
+            items.append(identity)
         else:
             items.append({"item_type": item_type, "raw": base64.b64encode(item_data).decode("utf-8")})
     lid["items"] = items
@@ -165,18 +167,16 @@ def fingerprint(row: pd.Series, vendors: pd.DataFrame, devices: pd.DataFrame):
 
 def make_ethernetip_fp_handler_from_db() -> ModuleHandler:
     def wrapper(mod: Module) -> None:
+        def handler(r):
+            if fp := fingerprint(r, vendors, devices):
+                mod.store(mod.make_fingerprint(r, fp, "ethernetip"))
+        
         repo = mod.repo()
         vendors = repo.get_records(source="eip_vendors", prefix=None)
         devices = repo.get_records(source="eip_devices", prefix=None)
-        def handler(df: pd.DataFrame):
-            fps = []
-            for _,r in df.iterrows():
-                if fp := fingerprint(r, vendors, devices):
-                    fps.append(mod.make_fingerprint(r, fp, "ethernetip"))
-            mod.save(*fps)
 
         q = query_records("zgrab2", protocol="ethernetip")
-        mod.with_pbar(handler, q)
+        mod.itemize(q, handler, orient="rows")
     return wrapper
 
 def make_fingerprinter() -> Module:

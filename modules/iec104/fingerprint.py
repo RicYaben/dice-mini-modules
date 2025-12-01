@@ -7,7 +7,7 @@ def fingerprint(row: pd.Series) -> dict | None:
     sdt = get_record_field(row, "startdt")
     tfr = get_record_field(row, "testfr")
     asdus = get_record_field(row, "interrogation", [])
-    if (not pd.isna(asdus)) and (asdus):
+    if len(asdus):
         return dict(
             asdus=asdus,
             sdt=sdt,

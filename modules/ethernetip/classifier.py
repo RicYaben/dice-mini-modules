@@ -1,7 +1,6 @@
 from dice.module import Module, new_module
 from dice.config import CLASSIFIER
 from dice.query import query_db
-import pandas as pd
 
 def ethernetip_cls_init(mod: Module) -> None: 
     mod.register_label(

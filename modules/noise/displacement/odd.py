@@ -6,14 +6,14 @@ from dice.config import TAGGER
 import pandas as pd
 
 def enip_odd(mod: Module) -> None:
+    # TODO: needs a fix to get the serial number, which is in items, and not always
     q_serial = """
         SELECT f.serial, COUNT(f.serial) AS count
         FROM fingerprints as f
-        WHERE f.protocol == "ethernetip"
+        WHERE f.protocol == 'ethernetip'
             AND count > 1
         GROUP BY f.serial;
     """
-    tags =[]
     for fp in mod.query(q_serial):
         tag = mod.make_tag(
             fp["host"], 
@@ -22,8 +22,7 @@ def enip_odd(mod: Module) -> None:
             fp["protocol"],
             fp["port"]
         )
-        tags.append(tag)
-    mod.save(*tags)
+        mod.store(tag)
 
 def iec_odd(mod: Module) -> None:
     """
@@ -38,7 +37,7 @@ def iec_odd(mod: Module) -> None:
 
     def ev(fp) -> HostTag | None:
         ioas = {}
-        if asdus := fp.get("interrogation", []):
+        if asdus := fp.get("data_interrogation", []):
             if len(set(filter(f100, asdus))) >= int(len(scanned)*.75):
                 return mod.make_tag(
                         fp["host"], 
@@ -68,10 +67,8 @@ def iec_odd(mod: Module) -> None:
                     )
                 
     def handler(df: pd.DataFrame) -> None:
-        tags = []
         for _, fp in df.iterrows():
-            if tag := ev(fp): tags.append(tag)
-        mod.save(*tags)
+            if tag := ev(fp): mod.store(tag)
     
     q = query_db("fingerprints", protocol="iec104")
     mod.with_pbar(handler, q)

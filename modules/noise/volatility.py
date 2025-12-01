@@ -105,19 +105,13 @@ def fetch_mtd_batches(mod: Module) -> Generator[tuple[dict, list[Any]], None, No
 
 def tag_mtd_intermitent(mod: Module) -> None:
     for summary, fps in fetch_mtd_batches(mod):
-        tags = []
         if d := eval_diff(pd.DataFrame.from_records(fps)):
-            tag = mod.make_tag(summary["host"], "mtd-different", d, summary["protocol"], summary["port"])
-            tags.append(tag)
-        mod.save(tags)
+            mod.store(mod.make_tag(summary["host"], "mtd-different", d, summary["protocol"], summary["port"]))
 
 def tag_mtd_different(mod: Module) -> None:
     for summary, fps in fetch_mtd_batches(mod):
-        tags = []
         if idet := eval_intermitent(fps):
-            tag = mod.make_tag(summary["host"], "mtd-intermitent", idet, summary["protocol"], summary["port"])
-            tags.append(tag)
-        mod.save(tags)
+            mod.store(mod.make_tag(summary["host"], "mtd-intermitent", idet, summary["protocol"], summary["port"]))
 
 def volatility_init(mod: Module) -> None:
     mod.register_tag("mtd-intermitent", "Host appears and dissapear")

@@ -41,7 +41,7 @@ def iec_tarpit(mod: Module) -> NoiseEvaluator:
         # is very large, then flag this
         if len(fp["asdus"]) > threshold:
             tag = mod.make_fp_tag(fp, "tarpit", "too many IOAs")
-            mod.save(tag)
+            mod.store(tag)
     return ev
 
 def modbus_tarpit(mod: Module) -> NoiseEvaluator:
@@ -66,7 +66,7 @@ def modbus_tarpit(mod: Module) -> NoiseEvaluator:
     def ev(fp) -> None:
         if len(fp["objects"]) > threshold:
             tag = mod.make_tag(fp, "tarpit", "too many objects. More follows")
-            mod.save(tag)
+            mod.store(tag)
     return ev
         
 def make_tarpit_factory(mod: Module) -> NoiseEvaluatorFactory:
@@ -80,9 +80,8 @@ def tarpit_tag(mod: Module) -> None:
         ev = factory.get(p)
         if not ev:
             raise Exception(f"evaluator supported but not found: {p}")
-        
-        for fp in mod.query(query_db("fingerprints", protocol=p)):
-            ev(fp)
+        q = query_db("fingerprints", protocol=p)
+        mod.itemize(q, ev, orient="rows")
 
 def hostility_init(mod: Module) -> None:
     mod.register_tag("tarpit", "Determines whether a service is a tarpot by picking lengthy connections with abnormally large amounts of data")
