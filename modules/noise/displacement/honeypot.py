@@ -16,7 +16,8 @@ def conpot_iec104(df: pd.DataFrame) -> pd.DataFrame:
 
     def all_asdus(asdus: list[dict], tid: int, cas: list[int]):
         c = list(filter(in_tid_cas(tid, cas), asdus))
-        return len(c) >= len(cas)
+        unique_ca = {asdu["CA"] for asdu in c if "CA" in asdu}
+        return len(unique_ca) >= len(cas)
 
     tid100_cas = [1, 3, 11, 13]
 

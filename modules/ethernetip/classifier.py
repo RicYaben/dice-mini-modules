@@ -9,8 +9,15 @@ def ethernetip_cls_init(mod: Module) -> None:
     )
 
 def ethernetip_cls_handler(mod: Module) -> None:
+    def handle(row):
+        items = row.get("data_items", []) 
+        if isinstance(items, list):
+            for it in items:
+                if "vendor_name" in it:
+                    mod.store(mod.make_label(row["id"], "anonymous-connection"))
+
     q =query_db("fingerprints", protocol="ethernetip")
-    mod.itemize(q, lambda x: mod.make_label(str(x.id), "anonymous-connection"))
+    mod.itemize(q, handle, orient="rows")
 
 def make_classifier() -> Module:
     return new_module(CLASSIFIER, "ethernetip", ethernetip_cls_handler, ethernetip_cls_init)
