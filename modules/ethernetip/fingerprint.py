@@ -156,6 +156,7 @@ def parse_list_identity(data: str, vendors: pd.DataFrame, devices: pd.DataFrame)
         if item_type == 0x0C:  # Identity item
             identity = parse_list_identity_item(item_data, vendors, devices)
             items.append(identity)
+            lid["identity"] = identity
         else:
             items.append({"item_type": item_type, "raw": base64.b64encode(item_data).decode("utf-8")})
     lid["items"] = items

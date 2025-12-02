@@ -82,6 +82,7 @@ def tag_condensed(mod: Module) -> None:
     # Filter rows instead of just prefixes
     dense_df = prefixes[prefixes["p_dense"] > 0.95]
 
+    # TODO: this could be improved imo.
     with tqdm(total=len(dense_df), desc="condensation") as pbar:
         for _, row in dense_df.iterrows():
             hosts = repo.query(query_records("hosts", prefix=row["prefix"]))
