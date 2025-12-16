@@ -1,6 +1,5 @@
 from dice.module import Module, new_module, new_registry
 from dice.query import query_prefix_hosts, query_records
-from dice.repo import save
 from dice.config import TAGGER
 
 from sklearn.linear_model import LinearRegression
@@ -68,16 +67,30 @@ def model_condensation(df: pd.DataFrame) -> None:
     gmm = GaussianMixture(n_components=2, random_state=0).fit(Xg)
     probs = gmm.predict_proba(Xg)
 
+    # Identify the dense component
     dense_component = np.argmax(gmm.means_)
     df["p_dense"] = probs[:, dense_component]
+
+    # --- Step 4: threshold density for 95% probability of being dense
+    mean_dense = gmm.means_[dense_component][0]
+    std_dense = np.sqrt(gmm.covariances_[dense_component][0][0])
+
+    # 95th percentile of dense component residuals in *log space*
+    log_excess_95 = mean_dense + 1.645 * std_dense
+
+    # density at 95% threshold
+    df["density_95"] = df["expected_density"] * (10 ** log_excess_95)
+
+    # number of devices needed to be dense at 95%
+    df["count_95"] = np.ceil(df["density_95"] * df["size"]).astype(int)
 
 def tag_condensed(mod: Module) -> None:
     "Uses a model to determine prefix density and condensation"
     repo = mod.repo()
     prefixes = repo.get_connection().execute(query_prefix_hosts()).df()
     model_condensation(prefixes)
-    desc = describe_condensation(prefixes)
-    save(repo.get_connection(), "condensation_summary", desc, force=True)
+    #desc = describe_condensation(prefixes)
+    #save(repo.get_connection(), "condensation_summary", desc, force=True)
 
     # Filter rows instead of just prefixes
     dense_df = prefixes[prefixes["p_dense"] > 0.95]

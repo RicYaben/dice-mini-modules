@@ -3,14 +3,13 @@ from dice.models import Source
 from dice.helpers import new_source
 from dice.loaders import with_records
 from dice.config import SCANNER
+from dice.query import query_db
 
 from typing import Callable
 from shodan import Shodan
 from greynoise.api import GreyNoise, APIConfig
 
 import requests
-import tempfile
-import json
 import os
 
 CENSYS_API = "https://api.platform.censys.io/v3/"
@@ -75,18 +74,6 @@ def greynoise_scanner(api_key: str, hosts: list[str]) -> list[dict]:
     client = GreyNoise(api_config)
     return fetch_greynoise(client, *hosts)
 
-def batch_scan(api_key: str, hosts: list[str], scanner: CTIScanner, batch_size: int = 100) -> list[dict]:
-    # NOTE: not in use
-    
-    batches = [hosts[i:i+batch_size] for i in range(0, len(hosts), batch_size)]
-    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as fp:
-        for b in batches:
-            if r:=scanner(api_key, b):
-                for ddict in r:
-                    fp.write(json.dumps(ddict)+"\n")
-        fp.seek(0)
-        return [json.loads(line) for line in fp if line.strip()]
-
 def wrap_scanner(name: str,  scanner: CTIScanner) -> CTIScannerHandler:
     def wrapper(api_key: str, hosts: list[str]) -> Source:
         res = scanner(api_key, hosts)
@@ -96,11 +83,9 @@ def wrap_scanner(name: str,  scanner: CTIScanner) -> CTIScannerHandler:
 
 def with_cti_scn(api_key: str, scn: CTIScannerHandler) -> ModuleHandler:
     def handler(mod: Module) -> None:
-        repo = mod.repo()
-        recs = repo.get_records("zgrab2")
-
-        src = scn(api_key, recs.ip.unique().tolist())
-        repo.add_sources(src)
+        df = mod.repo().get_connection().execute("SELECT DISTINCT host FROM fingerprints").df()
+        src = scn(api_key, df.host.tolist())
+        mod.repo().add_sources(src)
 
     return handler
 
