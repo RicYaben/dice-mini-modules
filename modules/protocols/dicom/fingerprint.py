@@ -36,5 +36,5 @@ def fingerprint(row) -> dict | None:
 
 dicom_fp_handler = make_fp_handler(fingerprint, "dicom")
 
-def make_fingerprintser() -> Module:
+def make_fingerprinter() -> Module:
     return new_module(FINGERPRINTER, "dicom", dicom_fp_handler)

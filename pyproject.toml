@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dice-mini-modules"
+version = "0.1.0"
+description = "DICE mini modules"
+authors = [{ name = "Ricardo Yaben", email = "rmyl@dtu.dk" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "accumulation_tree==0.6.4",
+    "ansimarkup==2.1.0",
+    "attrs==25.3.0",
+    "cachetools==6.2.2",
+    "certifi==2025.11.12",
+    "charset-normalizer==3.4.4",
+    "click==8.1.8",
+    "click-default-group==1.2.4",
+    "click-plugins==1.1.1.2",
+    "click-repl==0.3.0",
+    "colorama==0.4.6",
+    "dict2xml==1.7.7",
+    "duckdb==1.3.2",
+    "filelock==3.20.0",
+    "grandalf==0.8",
+    "greynoise==3.0.1",
+    "hilbertcurve==2.0.5",
+    "idna==3.11",
+    "jsonschema==4.25.1",
+    "jsonschema-specifications==2025.4.1",
+    "more-itertools==10.8.0",
+    "netgraph==4.13.2",
+    "numpy==2.3.2",
+    "packaging==25.0",
+    "pandas==2.3.2",
+    "pyarrow==22.0.0",
+    "pytricia==1.3.0",
+    "pytz==2025.2",
+    "pyudorandom==1.0.0",
+    "RapidFuzz==3.13.0",
+    "rectangle-packer==2.0.5",
+    "referencing==0.36.2",
+    "requests==2.32.5",
+    "requests-file==3.0.1",
+    "rpds-py==0.27.0",
+    "scikit-learn==1.7.1",
+    "scipy==1.16.1",
+    "shodan==1.31.0",
+    "six==1.17.0",
+    "squarify==0.4.4",
+    "tabulate==0.9.0",
+    "tdigest==0.5.2.2",
+    "threadpoolctl==3.6.0",
+    "tldextract==5.3.0",
+    "tqdm==4.67.1",
+    "typing_extensions==4.15.0",
+    "tzdata==2025.2",
+    "ujson==5.11.0",
+    "urllib3==2.5.0",
+]
+
+[project.optional-dependencies]
+dice = [
+    "dice-mini @ file:///absolute/path/to/dice-mini",
+]
+
+[project.entry-points."dice.modules"]
+registry = "modules:registry"
