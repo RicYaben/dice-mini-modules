@@ -3,7 +3,6 @@ from dice.models import Source
 from dice.helpers import new_source
 from dice.loaders import with_records
 from dice.config import SCANNER
-from dice.query import query_db
 
 from typing import Callable
 from shodan import Shodan
