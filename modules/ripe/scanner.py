@@ -1,18 +1,20 @@
 from dice.module import Module, ModuleHandler, Repository, new_module
 from dice.models import Source, Host
-from dice.helpers import new_source, new_host, with_model
+from dice.helpers import new_source
 from dice.loaders import with_records
-from dice.query import query_records
+from dice.query import query_db
 from dice.config import SCANNER
+from dice.store import OnConflict
 from tqdm import tqdm
+
 import ujson
+import ipaddress
+import requests
+import pandas as pd
 
 from .models import AutonomousSystem, Resource
 from .query import query_prefixes
 from .helpers import build_prefix_tree, build_resource_tree, flatten_resources
-
-import ipaddress
-import requests
 
 API = "https://stat.ripe.net/data"
 ENDPOINTS = {
@@ -97,13 +99,19 @@ def make_asn(asn: str) -> AutonomousSystem:
 def fetch_prefixes(repo: Repository, *addrs: str) -> Source:
     tree = build_prefix_tree(query_prefixes(repo))
     recs = []
-    for addr in addrs:
-        if tree.has(addr):
-            continue
-        ris = fetch_ris(addr)
-        if ris and (px := ris.get("prefix")):
-            tree.add(px, px)
-            recs.append(ris)
+
+    with tqdm(total=len(addrs), desc="Prefixes") as pbar:
+        pbar.write("fetching prefixes")
+        for addr in addrs:
+            pbar.update()
+
+            if tree.has(addr):
+                continue
+            ris = fetch_ris(addr)
+            if ris and (px := ris.get("prefix")):
+                tree.add(px, px)
+                recs.append(ris)
+
     
     src = new_source("prefixes", "-", "-", loader=with_records(recs))
     return src
@@ -111,11 +119,15 @@ def fetch_prefixes(repo: Repository, *addrs: str) -> Source:
 def fetch_asn(*asn: str) -> list[Source]:
     asns = []
     resources = []
-    for n in asn:
-        as_model = make_asn(n)
-        asns.append(as_model.to_dict())
-        res = get_asn_resources(n)
-        resources.extend(res)
+
+    with tqdm(total=len(asn), desc="ASN") as pbar:
+        pbar.write("fetching ASNs")
+        for n in asn:
+            as_model = make_asn(n)
+            asns.append(as_model.to_dict())
+            res = get_asn_resources(n)
+            resources.extend(res)
+            pbar.update(1)
 
     asn_src = new_source("asn", "-","-", loader=with_records(asns))
 
@@ -124,7 +136,7 @@ def fetch_asn(*asn: str) -> list[Source]:
     return [asn_src, res_src]
 
 def scan(mod: Module) -> list[Source]:
-    hosts = mod.query(query_records("hosts"))
+    hosts = mod.query(query_db("hosts"))
     addrs = set([h["ip"] for h in hosts])
     prefixes = fetch_prefixes(mod.repo(), *addrs)
 
@@ -143,40 +155,63 @@ def make_asn_scn() -> ModuleHandler:
 def make_asn_scanner() -> Module:
     return new_module(SCANNER, "asn", make_asn_scn())
 
-def scan_hosts(mod: Module) -> None:
+def update_hosts(mod: Module) -> None:
+    mod.set_store_policy(OnConflict.UPSERT)
     repo = mod.repo()
 
-    print("fetching records: ASN resources")
+    # Gather resources and build tree
     resources = repo.get_records(normalize=True, source="resources")
     resources["prefixes"] = resources["prefixes"].apply(ujson.loads)
 
-    print("flattening resource prefixes")
     flat = flatten_resources(resources)
-
-    print("building resource tree")
     tree = build_resource_tree(flat)
 
-    print("adding hosts")
-    q = """
-    SELECT DISTINCT ip
-    FROM records_zgrab2
-    """
-    t, gen = repo.queryb(q, normalize=False)
-    hosts: list[Host] = []
-    with tqdm(total=t, desc="hosts") as pbar:
-        for b in gen:
-            for addr in b["ip"].tolist():
-                info = tree.get(addr)
-                if info:
-                    host: Host = new_host(addr, prefix=info["prefix"], asn=info["asn"])
-                    hosts.append(host)
-            pbar.update(len(b.index))
-    src = new_source("hosts", "-", "-", loader=with_model(hosts))
-    mod.repo().add_source(src)
+    def handler(df: pd.DataFrame) -> None:
+        for _,host in df.iterrows():
+            if info := tree.get(host["ip"]):
+                host["prefix"] = info.get("prefix")
+                host["asn"] = info.get("asn")
+                mod.store(Host.from_series(host))
+
+    mod.with_pbar(handler, query_db("hosts"))
+
+# TODO: this does not work as intended. Hosts are already in the db
+# we just need to update them. They are not a new source!
+
+# def scan_hosts(mod: Module) -> None:
+#     repo = mod.repo()
+
+#     print("fetching records: ASN resources")
+#     resources = repo.get_records(normalize=True, source="resources")
+#     resources["prefixes"] = resources["prefixes"].apply(ujson.loads)
+
+#     print("flattening resource prefixes")
+#     flat = flatten_resources(resources)
+
+#     print("building resource tree")
+#     tree = build_resource_tree(flat)
+
+#     print("adding hosts")
+#     q = """
+#     SELECT DISTINCT ip
+#     FROM records_zgrab2
+#     """
+#     t, gen = repo.queryb(q, normalize=False)
+#     hosts: list[Host] = []
+#     with tqdm(total=t, desc="hosts") as pbar:
+#         for b in gen:
+#             for addr in b["ip"].tolist():
+#                 info = tree.get(addr)
+#                 if info:
+#                     host: Host = new_host(addr, prefix=info["prefix"], asn=info["asn"])
+#                     hosts.append(host)
+#             pbar.update(len(b.index))
+#     src = new_source("hosts", "-", "-", loader=with_model(hosts))
+#     mod.repo().add_source(src)
 
 def make_hosts_scn() -> ModuleHandler:
     def handler(mod: Module) -> None:
-         scan_hosts(mod)
+        update_hosts(mod)
     return handler
 
 def make_hosts_scanner() -> Module:
