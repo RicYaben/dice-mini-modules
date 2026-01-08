@@ -5,7 +5,8 @@ def query_prefixes(repo: Repository) -> list[str]:
     q = """
     SELECT DISTINCT prefix
     FROM (
-        SELECT resource AS prefix FROM records_resources
+        SELECT resource AS prefix 
+        FROM resources
         UNION ALL
         SELECT prefix FROM unnest(prefixes) AS t(prefix)
     ) AS all_prefixes

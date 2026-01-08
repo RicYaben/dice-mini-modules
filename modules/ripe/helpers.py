@@ -1,6 +1,8 @@
 import pandas as pd
 import pytricia
 
+from modules.ripe.models import Prefix
+
 class PrefixTree:
     """A fast prefix tree using PyTricia."""
 
@@ -23,10 +25,10 @@ class PrefixTree:
         """Return True if the IP is within any known prefix."""
         return addr in self.tree
 
-def build_prefix_tree(prefixes: list[str]) -> PrefixTree:
+def build_prefix_tree(prefixes: list[Prefix]) -> PrefixTree:
     tree = PrefixTree()
     for p in prefixes:
-        tree.add(p, p)
+        tree.add(p.prefix, p)
     return tree
 
 def build_resource_tree(flat: pd.DataFrame) -> PrefixTree:

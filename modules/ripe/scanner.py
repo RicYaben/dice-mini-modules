@@ -1,20 +1,18 @@
-from dice.module import Module, ModuleHandler, Repository, new_module
-from dice.models import Source, Host
-from dice.helpers import new_source
-from dice.loaders import with_records
+from dice.module import Module, ModuleHandler, new_module
+from dice.models import  Host
+from dice.config import logger
 from dice.query import query_db
 from dice.config import SCANNER
 from dice.store import OnConflict
-from tqdm import tqdm
 
 import ujson
 import ipaddress
 import requests
 import pandas as pd
 
-from .models import AutonomousSystem, Resource
+from .models import AutonomousSystem, Prefix, Resource
 from .query import query_prefixes
-from .helpers import build_prefix_tree, build_resource_tree, flatten_resources
+from .helpers import PrefixTree, build_prefix_tree, build_resource_tree, flatten_resources
 
 API = "https://stat.ripe.net/data"
 ENDPOINTS = {
@@ -24,132 +22,131 @@ ENDPOINTS = {
     "prefixes": "maxmind-geo-lite-announced-by-as/data.json",
 }
 
+# TODO: This is not very good.
+# - the hosts db already has prefix and asn
+# 1. gather the prefixes and make a tree
+# 2. gather all the hosts without prefix
+# 3. update hosts with their new prefix and asn
+
+# def get_asn_name(asn: str) -> str:
+#     p = {"resource": asn}
+#     try:
+#         res = requests.get("/".join([API, ENDPOINTS["name"]]), params=p).json()
+#         return res["data"]["names"][asn]
+#     except Exception as e:
+#         logger.warning(f"failed to get ans info ({asn}): {e}")
+#         return ""
+
+# def get_asn_contacts(asn: str) -> list[str]:
+#     p = {"resource": asn}
+#     try:
+#         res = requests.get("/".join([API, ENDPOINTS["contact"]]), params=p).json()
+#         return res["data"].get("abuse_contacts", [])
+#     except Exception as e:
+#         logger.warning(f"failed to get abuse contacts ({asn}): {e}")
+#         return []
+
+# def get_asn_resources(asn: str) -> list[Resource]:
+#     p = {"data_overload_limit": "ignore", "resource": asn}
+#     try:
+#         res = requests.get("/".join([API, ENDPOINTS["prefixes"]]), params=p).json()
+#     except Exception as e:
+#         logger.warning(f"failed to get resources ({asn}): {e}")
+#         return []
+    
+#     resources = []
+#     for pf in res["data"].get("located_resources"):
+#         res = pf.get("resource")
+#         if isinstance(ipaddress.ip_network(res), ipaddress.IPv6Network):
+#             continue # dont care about IPv6
+
+#         res = [make_resource(asn, res, loc) for loc in pf.get("locations")]
+#         resources.extend(res)
+#     return resources
+
+# def new_resource(asn: str, resource: str, prefixes: list[str], city: str, country: str, longitude: str, latitude: str) -> Resource:
+#     return Resource(asn, resource, prefixes, country, city, latitude, longitude)
+    
+# def make_resource(asn: str, resource: str, loc: dict) -> Resource:
+#     return new_resource(
+#         asn, resource,
+#         prefixes=loc.get("resources", []),
+#         city=loc.get("city", ""),
+#         country=loc.get("country", ""),
+#         longitude=loc.get("longitude", ""),
+#         latitude=loc.get("latitude", ""),
+#     )
+
+# def new_asn(num: str, name: str, contacts: list[str]) -> AutonomousSystem:
+#     return AutonomousSystem(num, name, contacts)
+
+# def make_asn(asn: str) -> AutonomousSystem:
+#     return new_asn(
+#         asn, 
+#         name=get_asn_name(asn),
+#         contacts=get_asn_contacts(asn),
+#     )
+
+# def fetch_asn(mod: Module):
+#     def handler(df: pd.DataFrame):
+#         for row in df.itertuples():
+#             asn = str(row.asn)
+#             as_model = make_asn(asn)
+#             mod.store(as_model)
+
+#             res = get_asn_resources(asn)
+#             mod.store(res)
+
+#             logger.debug(f"done fetching asn {asn}")
+
+#     mod.with_pbar(handler, query_db("prefixes"), desc="asns", bsize=10)
+
 def get_ris(addr: str) -> dict | None:
     p = {"resource": addr}
     try:
         data = requests.get("/".join([API, ENDPOINTS["ris"]]), params=p).json()
         return data["data"]
     except Exception as e:
-        print(f"failed to fetch ip {addr} info: {e}")
+        logger.warning(f"failed to fetch ip {addr} info: {e}")
 
-def fetch_ris(addr: str) -> dict | None:
+def fetch_ris(addr: str) -> Prefix | None:
     'returns basic AS info from an address'
     if net_info := get_ris(addr):
-        return {"prefix": net_info.get("prefix", None), "asn": asn[0] if (asn := net_info.get("asns", [None])) else None}
+        asn_d = net_info.get("asns", [None])
+        prefix = net_info.get("prefix", None)
+        if asn_d and (asn:=asn_d[0]) and prefix:
+            return Prefix(
+                prefix = prefix,
+                asn = asn,
+            )
 
-def get_asn_name(asn: str) -> str:
-    p = {"resource": asn}
-    try:
-        res = requests.get("/".join([API, ENDPOINTS["name"]]), params=p).json()
-        return res["data"]["names"][asn]
-    except Exception as e:
-        print(f"failed to get ans info: {e}")
-        return ""
+def fetch_prefixes(mod: Module):
+    tree = PrefixTree()
+    for host in mod.query(query_db("hosts", prefix__ne="")):
+        tree.add(host["prefix"], Prefix(host["prefix"], host["asn"]))
 
-def get_asn_contacts(asn: str) -> list[str]:
-    p = {"resource": asn}
-    try:
-        res = requests.get("/".join([API, ENDPOINTS["contact"]]), params=p).json()
-        return res["data"].get("abuse_contacts", [])
-    except Exception as e:
-        print(f"failed to get abuse contacts: {e}")
-        return []
+    mod.set_store_policy(OnConflict.UPDATE)
+    def handler(df: pd.DataFrame):
+        for _, host in df.iterrows():
+            ip = host["ip"]
 
-def get_asn_resources(asn: str) -> list[Resource]:
-    p = {"data_overload_limit": "ignore", "resource": asn}
-    try:
-        res = requests.get("/".join([API, ENDPOINTS["prefixes"]]), params=p).json()
-    except Exception as e:
-        print(f"failed to get resources ({asn}): {e}")
-        return []
-    
-    resources = []
-    for pf in res["data"].get("located_resources"):
-        res = pf.get("resource")
-        if isinstance(ipaddress.ip_network(res), ipaddress.IPv6Network):
-            continue # dont care about IPv6
+            prefix = tree.get(ip)
+            if not prefix:
+                prefix = fetch_ris(ip)
+                if not prefix:
+                    continue
+                tree.add(prefix.prefix, prefix)
 
-        res = [make_resource(asn, res, loc) for loc in pf.get("locations")]
-        resources.extend(res)
-    return resources
+            host["prefix"] = prefix.prefix
+            host["asn"] = prefix.asn
+            mod.store(Host.from_series(host))
 
-def new_resource(asn: str, resource: str, prefixes: list[str], city: str, country: str, longitude: str, latitude: str) -> Resource:
-    return Resource(asn, resource, prefixes, country, city, latitude, longitude)
-    
-def make_resource(asn: str, resource: str, loc: dict) -> Resource:
-    return new_resource(
-        asn, resource,
-        prefixes=loc.get("resources", []),
-        city=loc.get("city", ""),
-        country=loc.get("country", ""),
-        longitude=loc.get("longitude", ""),
-        latitude=loc.get("latitude", ""),
-    )
-
-def new_asn(num: str, name: str, contacts: list[str]) -> AutonomousSystem:
-    return AutonomousSystem(num, name, contacts)
-
-def make_asn(asn: str) -> AutonomousSystem:
-    return new_asn(
-        asn, 
-        name=get_asn_name(asn),
-        contacts=get_asn_contacts(asn),
-    )
-
-def fetch_prefixes(repo: Repository, *addrs: str) -> Source:
-    tree = build_prefix_tree(query_prefixes(repo))
-    recs = []
-
-    with tqdm(total=len(addrs), desc="Prefixes") as pbar:
-        pbar.write("fetching prefixes")
-        for addr in addrs:
-            pbar.update()
-
-            if tree.has(addr):
-                continue
-            ris = fetch_ris(addr)
-            if ris and (px := ris.get("prefix")):
-                tree.add(px, px)
-                recs.append(ris)
-
-    
-    src = new_source("prefixes", "-", "-", loader=with_records(recs))
-    return src
-
-def fetch_asn(*asn: str) -> list[Source]:
-    asns = []
-    resources = []
-
-    with tqdm(total=len(asn), desc="ASN") as pbar:
-        pbar.write("fetching ASNs")
-        for n in asn:
-            as_model = make_asn(n)
-            asns.append(as_model.to_dict())
-            res = get_asn_resources(n)
-            resources.extend(res)
-            pbar.update(1)
-
-    asn_src = new_source("asn", "-","-", loader=with_records(asns))
-
-    res = [r.to_dict() for r in resources]
-    res_src = new_source("resources", "-","-", loader=with_records(res))
-    return [asn_src, res_src]
-
-def scan(mod: Module) -> list[Source]:
-    hosts = mod.query(query_db("hosts"))
-    addrs = set([h["ip"] for h in hosts])
-    prefixes = fetch_prefixes(mod.repo(), *addrs)
-
-    # fetch ASNs info and add it to the db
-    asns = []
-    for df in prefixes.load():
-        asns.extend(df["asn"].tolist())
-    return fetch_asn(*set(asns))
+    mod.with_pbar(handler, query_db("hosts", prefix=""), desc="prefixes", bsize=10)
 
 def make_asn_scn() -> ModuleHandler:
     def handler(mod: Module) -> None:
-        srcs = scan(mod)
-        mod.repo().add_sources(*srcs)
+        fetch_prefixes(mod)
+        #fetch_asn(mod)
     return handler
 
 def make_asn_scanner() -> Module:
@@ -173,41 +170,8 @@ def update_hosts(mod: Module) -> None:
                 host["asn"] = info.get("asn")
                 mod.store(Host.from_series(host))
 
-    mod.with_pbar(handler, query_db("hosts"))
-
-# TODO: this does not work as intended. Hosts are already in the db
-# we just need to update them. They are not a new source!
-
-# def scan_hosts(mod: Module) -> None:
-#     repo = mod.repo()
-
-#     print("fetching records: ASN resources")
-#     resources = repo.get_records(normalize=True, source="resources")
-#     resources["prefixes"] = resources["prefixes"].apply(ujson.loads)
-
-#     print("flattening resource prefixes")
-#     flat = flatten_resources(resources)
-
-#     print("building resource tree")
-#     tree = build_resource_tree(flat)
-
-#     print("adding hosts")
-#     q = """
-#     SELECT DISTINCT ip
-#     FROM records_zgrab2
-#     """
-#     t, gen = repo.queryb(q, normalize=False)
-#     hosts: list[Host] = []
-#     with tqdm(total=t, desc="hosts") as pbar:
-#         for b in gen:
-#             for addr in b["ip"].tolist():
-#                 info = tree.get(addr)
-#                 if info:
-#                     host: Host = new_host(addr, prefix=info["prefix"], asn=info["asn"])
-#                     hosts.append(host)
-#             pbar.update(len(b.index))
-#     src = new_source("hosts", "-", "-", loader=with_model(hosts))
-#     mod.repo().add_source(src)
+    # only hosts without prefix
+    mod.with_pbar(handler, query_db("hosts", prefix=""))
 
 def make_hosts_scn() -> ModuleHandler:
     def handler(mod: Module) -> None:
