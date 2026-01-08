@@ -5,14 +5,11 @@ from dice.query import query_db
 from dice.config import SCANNER
 from dice.store import OnConflict
 
-import ujson
-import ipaddress
 import requests
 import pandas as pd
 
-from .models import AutonomousSystem, Prefix, Resource
-from .query import query_prefixes
-from .helpers import PrefixTree, build_prefix_tree, build_resource_tree, flatten_resources
+from .models import Prefix
+from .helpers import PrefixTree
 
 API = "https://stat.ripe.net/data"
 ENDPOINTS = {
@@ -21,6 +18,57 @@ ENDPOINTS = {
     "name": "as-names/data.json",
     "prefixes": "maxmind-geo-lite-announced-by-as/data.json",
 }
+
+def get_ris(addr: str) -> dict | None:
+    p = {"resource": addr}
+    try:
+        data = requests.get("/".join([API, ENDPOINTS["ris"]]), params=p).json()
+        return data["data"]
+    except Exception as e:
+        logger.warning(f"failed to fetch ip {addr} info: {e}")
+
+def fetch_ris(addr: str) -> Prefix | None:
+    'returns basic AS info from an address'
+    if net_info := get_ris(addr):
+        asn_d = net_info.get("asns", [None])
+        prefix = net_info.get("prefix", None)
+        if asn_d and (asn:=asn_d[0]) and prefix:
+            return Prefix(
+                prefix = prefix,
+                asn = asn,
+            )
+
+def fetch_prefixes(mod: Module):
+    tree = PrefixTree()
+    for host in mod.query(query_db("hosts", prefix__ne="")):
+        tree.add(host["prefix"], Prefix(host["prefix"], host["asn"]))
+
+    mod.set_store_policy(OnConflict.UPDATE)
+    def handler(df: pd.DataFrame):
+        for _, host in df.iterrows():
+            ip = host["ip"]
+
+            prefix = tree.get(ip)
+            if not prefix:
+                prefix = fetch_ris(ip)
+                if not prefix:
+                    continue
+                tree.add(prefix.prefix, prefix)
+
+            host["prefix"] = prefix.prefix
+            host["asn"] = prefix.asn
+            mod.store(Host.from_series(host))
+
+    mod.with_pbar(handler, query_db("hosts", prefix=""), desc="prefixes", bsize=10)
+
+def make_asn_scn() -> ModuleHandler:
+    def handler(mod: Module) -> None:
+        fetch_prefixes(mod)
+        #fetch_asn(mod)
+    return handler
+
+def make_asn_scanner() -> Module:
+    return new_module(SCANNER, "asn", make_asn_scn())
 
 # TODO: This is not very good.
 # - the hosts db already has prefix and asn
@@ -101,82 +149,32 @@ ENDPOINTS = {
 
 #     mod.with_pbar(handler, query_db("prefixes"), desc="asns", bsize=10)
 
-def get_ris(addr: str) -> dict | None:
-    p = {"resource": addr}
-    try:
-        data = requests.get("/".join([API, ENDPOINTS["ris"]]), params=p).json()
-        return data["data"]
-    except Exception as e:
-        logger.warning(f"failed to fetch ip {addr} info: {e}")
 
-def fetch_ris(addr: str) -> Prefix | None:
-    'returns basic AS info from an address'
-    if net_info := get_ris(addr):
-        asn_d = net_info.get("asns", [None])
-        prefix = net_info.get("prefix", None)
-        if asn_d and (asn:=asn_d[0]) and prefix:
-            return Prefix(
-                prefix = prefix,
-                asn = asn,
-            )
+# def update_hosts(mod: Module) -> None:
+#     mod.set_store_policy(OnConflict.UPSERT)
+#     repo = mod.repo()
 
-def fetch_prefixes(mod: Module):
-    tree = PrefixTree()
-    for host in mod.query(query_db("hosts", prefix__ne="")):
-        tree.add(host["prefix"], Prefix(host["prefix"], host["asn"]))
+#     # Gather resources and build tree
+#     resources = repo.get_records(normalize=True, source="resources")
+#     resources["prefixes"] = resources["prefixes"].apply(ujson.loads)
 
-    mod.set_store_policy(OnConflict.UPDATE)
-    def handler(df: pd.DataFrame):
-        for _, host in df.iterrows():
-            ip = host["ip"]
+#     flat = flatten_resources(resources)
+#     tree = build_resource_tree(flat)
 
-            prefix = tree.get(ip)
-            if not prefix:
-                prefix = fetch_ris(ip)
-                if not prefix:
-                    continue
-                tree.add(prefix.prefix, prefix)
+#     def handler(df: pd.DataFrame) -> None:
+#         for _,host in df.iterrows():
+#             if info := tree.get(host["ip"]):
+#                 host["prefix"] = info.get("prefix")
+#                 host["asn"] = info.get("asn")
+#                 mod.store(Host.from_series(host))
 
-            host["prefix"] = prefix.prefix
-            host["asn"] = prefix.asn
-            mod.store(Host.from_series(host))
+#     # only hosts without prefix
+#     mod.with_pbar(handler, query_db("hosts", prefix=""))
 
-    mod.with_pbar(handler, query_db("hosts", prefix=""), desc="prefixes", bsize=10)
+# def make_hosts_scn() -> ModuleHandler:
+#     def handler(mod: Module) -> None:
+#         update_hosts(mod)
+#     return handler
 
-def make_asn_scn() -> ModuleHandler:
-    def handler(mod: Module) -> None:
-        fetch_prefixes(mod)
-        #fetch_asn(mod)
-    return handler
-
-def make_asn_scanner() -> Module:
-    return new_module(SCANNER, "asn", make_asn_scn())
-
-def update_hosts(mod: Module) -> None:
-    mod.set_store_policy(OnConflict.UPSERT)
-    repo = mod.repo()
-
-    # Gather resources and build tree
-    resources = repo.get_records(normalize=True, source="resources")
-    resources["prefixes"] = resources["prefixes"].apply(ujson.loads)
-
-    flat = flatten_resources(resources)
-    tree = build_resource_tree(flat)
-
-    def handler(df: pd.DataFrame) -> None:
-        for _,host in df.iterrows():
-            if info := tree.get(host["ip"]):
-                host["prefix"] = info.get("prefix")
-                host["asn"] = info.get("asn")
-                mod.store(Host.from_series(host))
-
-    # only hosts without prefix
-    mod.with_pbar(handler, query_db("hosts", prefix=""))
-
-def make_hosts_scn() -> ModuleHandler:
-    def handler(mod: Module) -> None:
-        update_hosts(mod)
-    return handler
-
-def make_hosts_scanner() -> Module:
-    return new_module(SCANNER, "hosts", make_hosts_scn())
+# def make_hosts_scanner() -> Module:
+#     return new_module(SCANNER, "hosts", make_hosts_scn())
