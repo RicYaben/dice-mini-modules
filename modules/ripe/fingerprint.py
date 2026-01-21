@@ -1,5 +1,5 @@
 from dice.module import Module, ModuleHandler,new_module
-from dice.query import query_db
+from dice.query import query_records
 from dice.config import FINGERPRINTER
 
 from .helpers import PrefixTree, build_resource_tree
@@ -11,10 +11,10 @@ TREE: PrefixTree | None = None
 
 def fingerprint(mod: Module, row: pd.Series, tree: PrefixTree) -> Any:
     if (fp := tree.get(row["ip"])) is not None:
-        mod.save(mod.make_fingerprint(row, fp, "ripe"))
+        mod.store(mod.make_fingerprint(row, fp, "asn"))
 
 def load_tree(mod: Module) -> PrefixTree:
-    _, batches = mod.repo().queryb(query_db("resources"))
+    _, batches = mod.repo().queryb(query_records("resources"))
     resources = pd.concat(batches, ignore_index=True)
     return build_resource_tree(resources)
 
@@ -30,8 +30,8 @@ def make_asn_fp_handler() -> ModuleHandler:
             
             for _, row in df.iterrows():
                 fingerprint(mod, row, TREE)
-        mod.with_pbar(fp, query_db("zgrab2"))
+        mod.with_pbar(fp, query_records("zgrab2"))
     return handler
 
 def make_asn_fp_module() -> Module:
-    return new_module(FINGERPRINTER, "ripe", make_asn_fp_handler())
+    return new_module(FINGERPRINTER, "asn", make_asn_fp_handler())

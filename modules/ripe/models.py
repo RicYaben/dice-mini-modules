@@ -7,6 +7,14 @@ class AutonomousSystem(Model):
     name: str
     contacts: list[str]
 
+    @classmethod
+    def primary_key(cls):
+        return ("asn",)
+    
+    @classmethod
+    def table(cls) -> str:
+        return "asns"
+
 @dataclass
 class Resource(Model):
     # AS number
@@ -19,3 +27,24 @@ class Resource(Model):
     city: str
     latitude: str
     longitude: str
+
+    @classmethod
+    def primary_key(cls):
+        return ("asn", "resource")
+    
+    @classmethod
+    def table(cls) -> str:
+        return "resources"
+    
+@dataclass
+class Prefix(Model):
+    prefix: str
+    asn: str
+
+    @classmethod
+    def primary_key(cls):
+        return ("asn", "prefix")
+    
+    @classmethod
+    def table(cls) -> str:
+        return "prefixes"
