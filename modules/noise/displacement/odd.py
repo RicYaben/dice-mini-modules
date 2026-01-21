@@ -93,6 +93,25 @@ def iec_odd(mod: Module) -> None:
     q = query_db("fingerprints", protocol="iec104")
     mod.with_pbar(handler, q)
 
+def dicom_odd(mod: Module) -> None:
+    'Some echo honeypot that returns the Impl. Class UID and version as we sent it'
+    def handler(df: pd.DataFrame) -> None:
+        mask = (
+            (df["uid"].eq("1.2.3.4.5")) &
+            (df["version"].eq("ZGRAB2"))
+        )
+        odd = df[mask]
+        for _, fp in odd.iterrows():
+            mod.store(mod.make_fp_tag(
+                fp, 
+                "odd", 
+                "echo response Impl. Class UID and Version identical to sent under User Info."
+            ))
+
+
+    q = query_db("fingerprints", protocol="dicom")
+    mod.with_pbar(handler, q)
+
 
 def odd_init(mod: Module) -> None:
     mod.register_tag("odd", "Tags suspicious properties, e.g., reused serial number")

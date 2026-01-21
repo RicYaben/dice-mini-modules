@@ -10,10 +10,15 @@ from greynoise.api import GreyNoise, APIConfig
 
 import requests
 import os
+import ujson
 
-CENSYS_API = "https://api.platform.censys.io/v3/"
+CENSYS_API = "https://api.platform.censys.io/v3"
 CENSYS_ENDPOINTS = {
     "multiple":"global/asset/host"
+}
+IPINFO_API = "https://api.ipinfo.io"
+IPINFO_ENDPOINTS = {
+    "batch": "batch"
 }
 
 type CTIScannerHandler = Callable[[str, list[str]], Source]
@@ -52,14 +57,31 @@ def fetch_censys(api_key: str, *hosts: str) -> dict:
         "authorization": api_key,
     }
     payload = {"host_ids": hosts}
+    url = os.path.join(CENSYS_API, CENSYS_ENDPOINTS["multiple"])
 
     try:
-        response = requests.post("/".join([CENSYS_API, CENSYS_ENDPOINTS["multiple"]]), json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
         return response.json()["data"]
     except Exception as e:
-        print(f"failed to fetch hosts: {e}")
+        print(f"failed to fetch censys hosts: {e}")
         return {}
+    
+def fetch_ipinfo(api_key: str, *host: str) -> dict:
+    headers = {
+        "token": api_key,
+        "content-type": "application/json",
+    }
+    payload = {"data": ujson.dumps(host)}
+    url = os.path.join(IPINFO_API, IPINFO_ENDPOINTS["batch"])
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()["data"]
+    except Exception as e:
+        print(f"failed to fetch ipinfo hosts: {e}")
+        return {}
+
 
 def shodan_scanner(api_key: str, hosts: list[str]) -> list[dict]:
     client = Shodan(api_key)
@@ -72,6 +94,15 @@ def greynoise_scanner(api_key: str, hosts: list[str]) -> list[dict]:
     api_config = APIConfig(api_key=api_key, integration_name="sdk-sample")
     client = GreyNoise(api_config)
     return fetch_greynoise(client, *hosts)
+
+def ipinfo_scanner(api_key: str, hosts: list[str], batch_size: int = 1000) -> list[dict]:
+    results: list[dict] = []
+
+    for i in range(0, len(hosts), batch_size):
+        batch = hosts[i:i + batch_size]
+        results.extend(r for r in fetch_ipinfo(api_key, *batch) if r)
+
+    return results
 
 def wrap_scanner(name: str,  scanner: CTIScanner) -> CTIScannerHandler:
     def wrapper(api_key: str, hosts: list[str]) -> Source:
@@ -96,9 +127,8 @@ def get_scanner(cti: str) -> CTIScanner:
             return censys_scanner
         case "greynoise":
             return greynoise_scanner
-        # TODO: IPInfo
-        #case "ipinfo":
-        #    return ipinfo_scanner
+        case "ipinfo":
+            return ipinfo_scanner
         case _:
             raise Exception(f"unknown CTI {cti}")
 
@@ -108,5 +138,5 @@ def make_cti_scn_handler(cti: str, api_key: str) -> ModuleHandler:
 def make_scanners() -> list[Module]:
     return [
         new_module(SCANNER, cti, make_cti_scn_handler(cti, os.environ.get(f"{cti.upper()}_KEY", "")))
-        for cti in ["shodan", "censys", "greynoise"]
+        for cti in ["shodan", "censys", "greynoise", "ipinfo"]
     ]

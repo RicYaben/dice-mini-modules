@@ -64,6 +64,14 @@ def honeygrove_modbus(df: pd.DataFrame) -> pd.DataFrame:
     )
     return df[mask]
 
+def dicompot_dicom(df: pd.DataFrame) -> pd.DataFrame:
+    'dicompot is based in go-dicom. There are no real servers using this library; it is deprecated.'
+    mask = (
+        (df["uid"].str.startswith("1.2.826.0.1.3680043.9.7133")) &
+        (df["version"]).str.startswith("GODICOM")
+    )
+    return df[mask]
+
 def honeypot_init(mod: Module) -> None:
     mod.register_tag("honeypot", "Honeypot fingerprint")
 
@@ -75,6 +83,11 @@ def make_hp_handler(p: str, filt, hp: str) -> ModuleHandler:
         q = query_db("fingerprints", protocol=p)
         mod.itemize(q, itemize, orient="dataframe")
     return handler
+
+dicompot_reg = new_registry("dicompot")
+dicompot_reg.add(
+    new_module(TAGGER, "dicom", make_hp_handler("dicom", dicompot_dicom, "dicompot"), honeypot_init)
+)
 
 conpot_reg = new_registry("conpot")
 conpot_reg.add(
