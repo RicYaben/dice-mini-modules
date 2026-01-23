@@ -115,8 +115,7 @@ def with_cti_scn(api_key: str, scn: CTIScannerHandler) -> ModuleHandler:
     def handler(mod: Module) -> None:
         df = mod.repo().get_connection().execute("SELECT DISTINCT host FROM fingerprints").df()
         src = scn(api_key, df.host.tolist())
-        mod.repo().add_sources(src)
-
+        mod.repo().add_source(src)
     return handler
 
 def get_scanner(cti: str) -> CTIScanner:

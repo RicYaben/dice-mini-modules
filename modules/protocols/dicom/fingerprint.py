@@ -1,15 +1,18 @@
 import base64
 from dice.module import make_fp_handler, Module, new_module
 from dice.config import FINGERPRINTER
+from dice.helpers import get_record_field 
 
 def fingerprint(row) -> dict | None:
-    assoc = row.get("data_association")
+    assoc = get_record_field(row, "association", None)
     # bad response
     if not assoc:
         return
     
     msg = assoc.get("Msg")
     uinfo = msg.get("UserInfo")
+    if not uinfo:
+        return
 
     # if not type 0x50 (80) the ufo is bad
     if uinfo.get("Type") != 80:
@@ -34,7 +37,7 @@ def fingerprint(row) -> dict | None:
     }
     return data
 
-dicom_fp_handler = make_fp_handler(fingerprint, "dicom")
+dicom_fp_handler = make_fp_handler(fingerprint, "DICOM")
 
 def make_fingerprinter() -> Module:
-    return new_module(FINGERPRINTER, "dicom", dicom_fp_handler)
+    return new_module(FINGERPRINTER, "DICOM", dicom_fp_handler)

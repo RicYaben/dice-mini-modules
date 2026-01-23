@@ -1,6 +1,7 @@
 from dice.module import Module, new_module
 from dice.config import CLASSIFIER
 from dice.query import query_db
+import pandas as pd
 
 def dicom_cls_init(mod: Module) -> None:
     mod.register_label(
@@ -13,15 +14,15 @@ def dicom_cls_init(mod: Module) -> None:
     )
 
 def dicom_cls_handler(mod: Module) -> None:
-    q = query_db("fingerprints", protocol="dicom")
-    def handler(row):
-        fid = str(row.id)
-        if row.get("data_uid") or row.get("data_version"):
-            mod.store(mod.make_label(fid, "anonymous-connection"))
-        if row.get("data_echo"):
+    def handler(row: pd.Series):
+        fid = row["id"]
+        if row["data_uid"] or row["data_version"]:
+            mod.store(mod.make_label(fid, "anonymous-association"))
+        if row["data_echo"]:
             mod.store(mod.make_label(fid, "echo-response"))
 
-    mod.itemize(q, handler, orient="tuples")
+    q = query_db("fingerprints", protocol="DICOM")
+    mod.itemize(q, handler, orient="rows")
 
 def make_classifier() -> Module:
-    return new_module(CLASSIFIER, "dicom", dicom_cls_handler, dicom_cls_init)
+    return new_module(CLASSIFIER, "DICOM", dicom_cls_handler, dicom_cls_init)
