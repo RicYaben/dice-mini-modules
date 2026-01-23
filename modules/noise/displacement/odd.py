@@ -97,8 +97,8 @@ def dicom_odd(mod: Module) -> None:
     'Some echo honeypot that returns the Impl. Class UID and version as we sent it'
     def handler(df: pd.DataFrame) -> None:
         mask = (
-            (df["uid"].eq("1.2.3.4.5")) &
-            (df["version"].eq("ZGRAB2"))
+            (df["data_uid"].eq("1.2.3.4.5")) &
+            (df["data_version"].eq("ZGRAB2"))
         )
         odd = df[mask]
         for _, fp in odd.iterrows():
@@ -110,7 +110,7 @@ def dicom_odd(mod: Module) -> None:
 
 
     q = query_db("fingerprints", protocol="DICOM")
-    mod.with_pbar(handler, q)
+    mod.with_pbar(handler, q, desc="dicom-odd")
 
 
 def odd_init(mod: Module) -> None:
@@ -118,7 +118,7 @@ def odd_init(mod: Module) -> None:
     mod.register_tag("dicom-odd-echo", "Echoed parameters")
 
 def make_odd_dicom_module() -> Module:
-    return new_module(TAGGER, "dicom", enip_odd, odd_init)
+    return new_module(TAGGER, "dicom", dicom_odd, odd_init)
 
 def make_odd_iec104_module() -> Module:
     return new_module(TAGGER, "iec104", iec_odd, odd_init)

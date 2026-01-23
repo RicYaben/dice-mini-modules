@@ -67,8 +67,8 @@ def honeygrove_modbus(df: pd.DataFrame) -> pd.DataFrame:
 def dicompot_dicom(df: pd.DataFrame) -> pd.DataFrame:
     'dicompot is based in go-dicom. There are no real servers using this library; it is deprecated.'
     mask = (
-        (df["uid"].str.startswith("1.2.826.0.1.3680043.9.7133")) &
-        (df["version"]).str.startswith("GODICOM")
+        (df["data_uid"].str.startswith("1.2.826.0.1.3680043.9.7133")) &
+        (df["data_version"]).str.startswith("GODICOM")
     )
     return df[mask]
 
@@ -105,5 +105,6 @@ honeygrove_reg.add(
 honeypot_reg = new_registry("honeypot")
 honeypot_reg.add_groups([
     conpot_reg,
-    honeygrove_reg
+    honeygrove_reg,
+    dicompot_reg,
 ])
