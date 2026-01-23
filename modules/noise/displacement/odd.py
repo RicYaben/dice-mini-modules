@@ -109,13 +109,16 @@ def dicom_odd(mod: Module) -> None:
             ))
 
 
-    q = query_db("fingerprints", protocol="dicom")
+    q = query_db("fingerprints", protocol="DICOM")
     mod.with_pbar(handler, q)
 
 
 def odd_init(mod: Module) -> None:
     mod.register_tag("odd", "Tags suspicious properties, e.g., reused serial number")
+    mod.register_tag("dicom-odd-echo", "Echoed parameters")
 
+def make_odd_dicom_module() -> Module:
+    return new_module(TAGGER, "dicom", enip_odd, odd_init)
 
 def make_odd_iec104_module() -> Module:
     return new_module(TAGGER, "iec104", iec_odd, odd_init)
@@ -125,4 +128,4 @@ def make_odd_enip_module() -> Module:
     return new_module(TAGGER, "ethernetip", enip_odd, odd_init)
 
 
-odd_reg = new_registry("odd").add(make_odd_iec104_module(), make_odd_enip_module())
+odd_reg = new_registry("odd").add(make_odd_iec104_module(), make_odd_enip_module(), make_odd_dicom_module())

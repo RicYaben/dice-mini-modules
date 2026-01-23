@@ -86,7 +86,7 @@ def make_hp_handler(p: str, filt, hp: str) -> ModuleHandler:
 
 dicompot_reg = new_registry("dicompot")
 dicompot_reg.add(
-    new_module(TAGGER, "dicom", make_hp_handler("dicom", dicompot_dicom, "dicompot"), honeypot_init)
+    new_module(TAGGER, "dicom", make_hp_handler("DICOM", dicompot_dicom, "dicompot"), honeypot_init)
 )
 
 conpot_reg = new_registry("conpot")
