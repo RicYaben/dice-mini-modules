@@ -96,18 +96,39 @@ def iec_odd(mod: Module) -> None:
 def dicom_odd(mod: Module) -> None:
     'Some echo honeypot that returns the Impl. Class UID and version as we sent it'
     def handler(df: pd.DataFrame) -> None:
-        mask = (
-            (df["data_uid"].eq("1.2.3.4.5")) &
+        mask_echo = (
+            (df["data_uid"].eq("1.2.3.4.5")) |
             (df["data_version"].eq("ZGRAB2"))
         )
-        odd = df[mask]
-        for _, fp in odd.iterrows():
+        echo_rsp = df[mask_echo]
+        for _, fp in echo_rsp.iterrows():
             mod.store(mod.make_fp_tag(
                 fp, 
-                "odd", 
-                "echo response Impl. Class UID and Version identical to sent under User Info."
+                "echo", 
+                "same UserInfo"
             ))
 
+        # 2 and 3 are accept and reject assoc responses
+        # 7 is abort PDU
+        mal_rsp = df[~df["data_response"].isin((2,3,7))]
+        for _, fp in mal_rsp.iterrows():
+            mod.store(mod.make_fp_tag(
+                fp, 
+                "mal1", 
+                f"PDUType not ASSOC RSP, RJ, or abort: {fp['data_response']}"
+            ))
+
+        # malformed accepted associations: missing UID
+        mal_rsp2 = df[(
+            df["data_uid"].isna() &
+            df["data_response"].eq(2)
+        )]
+        for _, fp in mal_rsp2.iterrows():
+            mod.store(mod.make_fp_tag(
+                fp, 
+                "mal2", 
+                "Association accepted, but Implementation UID missing"
+            ))
 
     q = query_db("fingerprints", protocol="DICOM")
     mod.with_pbar(handler, q, desc="dicom-odd")
@@ -115,7 +136,9 @@ def dicom_odd(mod: Module) -> None:
 
 def odd_init(mod: Module) -> None:
     mod.register_tag("odd", "Tags suspicious properties, e.g., reused serial number")
-    mod.register_tag("dicom-odd-echo", "Echoed parameters")
+    mod.register_tag("echo", "Echoed parameters")
+    mod.register_tag("mal1", "Unexpected PDU Type")
+    mod.register_tag("mal2", "Malformed response")
 
 def make_odd_dicom_module() -> Module:
     return new_module(TAGGER, "dicom", dicom_odd, odd_init)

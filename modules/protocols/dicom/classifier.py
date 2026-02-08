@@ -16,9 +16,11 @@ def dicom_cls_init(mod: Module) -> None:
 def dicom_cls_handler(mod: Module) -> None:
     def handler(row: pd.Series):
         fid = row["id"]
-        if row["data_uid"] or row["data_version"]:
-            mod.store(mod.make_label(fid, "anonymous-association"))
-        if row["data_echo"]:
+
+        # Success echo response
+        # https://dicom.nema.org/medical/dicom/current/output/chtml/part07/sect_9.3.5.2.html
+        # 0x0000 as base64 = "AAA="
+        if row["data_echo_status"] == "AAA=":
             mod.store(mod.make_label(fid, "echo-response"))
 
     q = query_db("fingerprints", protocol="DICOM")

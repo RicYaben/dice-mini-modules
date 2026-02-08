@@ -66,10 +66,24 @@ def honeygrove_modbus(df: pd.DataFrame) -> pd.DataFrame:
 
 def dicompot_dicom(df: pd.DataFrame) -> pd.DataFrame:
     'dicompot is based in go-dicom. There are no real servers using this library; it is deprecated.'
-    mask = (
+    mask_uinfo = (
         (df["data_uid"].str.startswith("1.2.826.0.1.3680043.9.7133")) &
         (df["data_version"]).str.startswith("GODICOM")
     )
+
+    # claims to be radiant, but UID not from that viewer
+    mask_aet = (
+        (
+            df["data_calling"].eq("radiant") |
+            df["data_called"].eq("radiant")
+        ) &
+        ~df["data_uid"].str.startswith(
+            "1.2.826.0.1.3680043.8.1223",
+            na=False
+        )
+    )
+
+    mask = mask_uinfo | mask_aet
     return df[mask]
 
 def honeypot_init(mod: Module) -> None:
