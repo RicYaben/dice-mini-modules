@@ -68,5 +68,8 @@ dice = [
     "dice-mini @ file:///absolute/path/to/dice-mini",
 ]
 
+[tool.setuptools]
+packages = ["clearsight"]
+
 [project.entry-points."dice.modules"]
-registry = "modules:registry"
+registry = "clearsight:registry"

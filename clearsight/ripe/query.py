@@ -1,0 +1,19 @@
+from dice.repo import Repository
+import duckdb
+
+def query_prefixes(repo: Repository) -> list[str]:
+    q = """
+    SELECT DISTINCT prefix
+    FROM (
+        SELECT resource AS prefix 
+        FROM resources
+        UNION ALL
+        SELECT prefix FROM unnest(prefixes) AS t(prefix)
+    ) AS all_prefixes
+    """
+    try:
+        res = repo.connect().execute(q).fetchall()
+        return [row[0] for row in res]
+    # The table may not exist yet
+    except duckdb.CatalogException:
+        return []
