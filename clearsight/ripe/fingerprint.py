@@ -1,6 +1,5 @@
 from dice.modules import Module, ModuleHandler,new_module
 from dice.query import query_records
-from dice.config import FINGERPRINTER
 
 from .helpers import PrefixTree, build_resource_tree
 from typing import Any
@@ -34,4 +33,4 @@ def make_asn_fp_handler() -> ModuleHandler:
     return handler
 
 def make_asn_fp_module() -> Module:
-    return new_module(FINGERPRINTER, "asn", make_asn_fp_handler())
+    return new_module("f", "asn", make_asn_fp_handler())

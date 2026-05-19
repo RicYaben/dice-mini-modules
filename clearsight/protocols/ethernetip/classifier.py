@@ -1,5 +1,4 @@
 from dice.modules import Module, new_module
-from dice.config import CLASSIFIER
 from dice.query import query_db
 
 def ethernetip_cls_init(mod: Module) -> None: 
@@ -16,8 +15,8 @@ def ethernetip_cls_handler(mod: Module) -> None:
                 if "vendor_name" in it:
                     mod.store(mod.make_label(row["id"], "anonymous-connection"))
 
-    q =query_db("fingerprints", protocol="ethernetip")
+    q =query_db("fingerprint", protocol="ethernetip")
     mod.itemize(q, handle, orient="rows")
 
 def make_classifier() -> Module:
-    return new_module(CLASSIFIER, "ethernetip", ethernetip_cls_handler, ethernetip_cls_init)
+    return new_module("c", "ethernetip", ethernetip_cls_handler, ethernetip_cls_init)

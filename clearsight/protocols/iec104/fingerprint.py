@@ -1,6 +1,5 @@
 from dice.modules import Module, new_module, make_fp_handler
 from dice.helpers import get_record_field
-from dice.config import FINGERPRINTER
 import pandas as pd
 
 def fingerprint(row: pd.Series) -> dict | None:
@@ -17,4 +16,4 @@ def fingerprint(row: pd.Series) -> dict | None:
 iec104_fp_handler = make_fp_handler(fingerprint, "iec104")
 
 def make_fingerprinter() -> Module:
-    return new_module(FINGERPRINTER, "iec104", iec104_fp_handler)
+    return new_module("f", "iec104", iec104_fp_handler)

@@ -2,7 +2,6 @@ import pandas as pd
 
 from dice.modules import Module, new_module, new_registry, ModuleHandler
 from dice.query import query_db
-from dice.config import TAGGER
 
 def conpot_iec104(df: pd.DataFrame) -> pd.DataFrame:
     def in_tid_cas(tid: int, cas: list[int]):
@@ -64,6 +63,7 @@ def honeygrove_modbus(df: pd.DataFrame) -> pd.DataFrame:
     )
     return df[mask]
 
+# TODO: we have the list of uid's, we can make this much better
 def dicompot_dicom(df: pd.DataFrame) -> pd.DataFrame:
     'dicompot is based in go-dicom. There are no real servers using this library; it is deprecated.'
     mask_uinfo = (
@@ -100,20 +100,20 @@ def make_hp_handler(p: str, filt, hp: str) -> ModuleHandler:
 
 dicompot_reg = new_registry("dicompot")
 dicompot_reg.add(
-    new_module(TAGGER, "dicom", make_hp_handler("DICOM", dicompot_dicom, "dicompot"), honeypot_init)
+    new_module("t", "dicom", make_hp_handler("DICOM", dicompot_dicom, "dicompot"), honeypot_init)
 )
 
 conpot_reg = new_registry("conpot")
 conpot_reg.add(
     *[
-        new_module(TAGGER, p, make_hp_handler(p, filt, "conpot"), honeypot_init)
+        new_module("t", p, make_hp_handler(p, filt, "conpot"), honeypot_init)
         for p, filt in [("iec104", conpot_iec104), ("ethernetip", conpot_enip), ("modbus", conpot_modbus)]
     ]
 )
 
 honeygrove_reg = new_registry("honeygrove")
 honeygrove_reg.add(
-    new_module(TAGGER, "modbus", make_hp_handler("modbus", honeygrove_modbus, "honeygrove"), honeypot_init)
+    new_module("t", "modbus", make_hp_handler("modbus", honeygrove_modbus, "honeygrove"), honeypot_init)
 )
 
 honeypot_reg = new_registry("honeypot")

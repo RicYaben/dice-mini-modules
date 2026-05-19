@@ -1,11 +1,15 @@
-from dice.modules import Module, ModuleHandler, new_module
-from dice.models import Source
-from dice.helpers import new_source, with_records
-from dice.config import SCANNER
+from dataclasses import dataclass
 
-from typing import Callable
+from dice.modules import Module, ModuleHandler, new_module, query_db, tqdm
+from dice.models import Source
+from dice.config import ModuleEnum
+from dice.database import get_or_create
+from dice.resources import add_resource
+
+from typing import Callable, Generator
 from shodan import Shodan
 from greynoise.api import GreyNoise, APIConfig
+from uuid import uuid4
 
 import requests
 import os
@@ -20,8 +24,9 @@ IPINFO_ENDPOINTS = {
     "batch": "batch"
 }
 
-type CTIScannerHandler = Callable[[str, list[str]], Source]
-type CTIScanner = Callable[[str, list[str]], list[dict]]
+type CTIScannerHandler = Callable[[str, list[str]], Summary]
+type CTIResult = Generator[tuple[int, list[dict]], None, None]
+type CTIScanner = Callable[[str, list[str]], CTIResult]
 
 def greynoise_lookup(api: GreyNoise, *hosts: str, quick: bool = False) -> list[dict]:
     try:
@@ -81,40 +86,64 @@ def fetch_ipinfo(api_key: str, *host: str) -> dict:
         print(f"failed to fetch ipinfo hosts: {e}")
         return {}
 
-
-def shodan_scanner(api_key: str, hosts: list[str]) -> list[dict]:
+def shodan_scanner(api_key: str, hosts: list[str]) -> CTIResult:
     client = Shodan(api_key)
-    return [r for h in hosts if (r:= fetch_shodan(client, h))]
+    for h in hosts:
+        if r:= fetch_shodan(client, h):
+            yield 1, [r]
 
-def censys_scanner(api_key: str, hosts: list[str]) -> list[dict]:
-    return [r for h in hosts if (r:= fetch_censys(api_key, h))]
+def censys_scanner(api_key: str, hosts: list[str]) -> CTIResult:
+    for h in hosts:
+        if r:= fetch_censys(api_key, h):
+            yield 1, [r]
 
-def greynoise_scanner(api_key: str, hosts: list[str]) -> list[dict]:
+def greynoise_scanner(api_key: str, hosts: list[str]) -> CTIResult:
     api_config = APIConfig(api_key=api_key, integration_name="sdk-sample")
     client = GreyNoise(api_config)
-    return fetch_greynoise(client, *hosts)
+    yield len(hosts), fetch_greynoise(client, *hosts)
 
-def ipinfo_scanner(api_key: str, hosts: list[str], batch_size: int = 1000) -> list[dict]:
-    results: list[dict] = []
-
+def ipinfo_scanner(api_key: str, hosts: list[str], batch_size: int = 1000) -> CTIResult:
     for i in range(0, len(hosts), batch_size):
         batch = hosts[i:i + batch_size]
-        results.extend(r for r in fetch_ipinfo(api_key, *batch) if r)
+        yield len(batch), [fetch_ipinfo(api_key, *batch)]
 
-    return results
+def store_scan_results(fpath: str, records: list[dict]) -> None:
+    with open(fpath, "+a") as f:
+        ujson.dump(records, f, ensure_ascii=False)
+
+@dataclass
+class Summary:
+    scanner: str
+    results: str
+
+def new_summary(name: str, fpath: str= "", ext: str = "jsonl") -> Summary:
+    if not fpath:
+        fpath = "_".join([name, str(uuid4())])
+    if not fpath.endswith(ext):
+        fpath += "."+ext
+    return Summary(name, fpath)
 
 def wrap_scanner(name: str,  scanner: CTIScanner) -> CTIScannerHandler:
-    def wrapper(api_key: str, hosts: list[str]) -> Source:
-        res = scanner(api_key, hosts)
-        src = new_source(name, "-", "-", loader=with_records(res))
-        return src
+    def wrapper(api_key: str, hosts: list[str]) -> Summary:
+        summary = new_summary(name)
+        with tqdm(total=len(hosts), desc=name) as pbar:
+            for n, r in scanner(api_key, hosts):
+                store_scan_results(summary.results, r)
+                pbar.update(n)
+        return summary
     return wrapper
 
 def with_cti_scn(api_key: str, scn: CTIScannerHandler) -> ModuleHandler:
     def handler(mod: Module) -> None:
-        df = mod.repo().connect().execute("SELECT DISTINCT host FROM fingerprints").df()
-        src = scn(api_key, df.host.tolist())
-        mod.repo().add_source(src)
+        _, gen = mod.query(query_db("fingerprint"))
+        for fps in gen:
+            with mod.repo().session() as s:
+                summary = scn(api_key, fps.host.unique().tolist())
+                src, _ = get_or_create(s, Source, name=summary.scanner)
+
+                assert(src.id is not None)
+                add_resource(mod.repo(), summary.scanner, src.id, summary.results)
+
     return handler
 
 def get_scanner(cti: str) -> CTIScanner:
@@ -135,6 +164,6 @@ def make_cti_scn_handler(cti: str, api_key: str) -> ModuleHandler:
 
 def make_scanners() -> list[Module]:
     return [
-        new_module(SCANNER, cti, make_cti_scn_handler(cti, os.environ.get(f"{cti.upper()}_KEY", "")))
+        new_module(ModuleEnum.SCANNER.value, cti, make_cti_scn_handler(cti, os.environ.get(f"{cti.upper()}_KEY", "")))
         for cti in ["shodan", "censys", "greynoise", "ipinfo"]
     ]

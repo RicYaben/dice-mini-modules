@@ -1,5 +1,4 @@
 from dice.modules import Module, new_module
-from dice.config import TAGGER
 
 from tdigest import TDigest
 import math
@@ -40,10 +39,10 @@ def bloated_tag(mod: Module) -> None:
     print(f"Threshold: {threshold}")
     
     q = bloated_q(threshold)
-    mod.itemize(q, lambda x: mod.store(mod.make_tag(str(x.host), "bloated", f"has {x.zpcount} services")), orient="tuples")
+    mod.itemize(q, lambda x: mod.store(mod.make_tag(x.host, "bloated", f"has {x.zpcount} services")), orient="tuples")
 
 def bloated_init(mod: Module) -> None:
     mod.register_tag("bloated", "Gaussian distribution of the number of ports")
 
 def make_bloated_module() -> Module:
-    return new_module(TAGGER, "bloated", bloated_tag, bloated_init)
+    return new_module("t", "bloated", bloated_tag, bloated_init)

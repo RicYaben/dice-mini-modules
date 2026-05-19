@@ -1,9 +1,5 @@
 from dice.modules import Module, new_module, new_registry
-from dice.config import TAGGER
-
-import pandas as pd
 from tdigest import TDigest
-
 
 def is_timeout(fp) -> bool:
     return fp["probe_status"] == "io-timeout" and fp["data"]
@@ -86,7 +82,7 @@ def modbus_tarpit(mod: Module) -> None:
 
     def ev(fp) -> None:
         if fp["count"] > threshold:
-            tag = mod.make_tag(fp, "tarpit", "too many objects. More follows")
+            tag = mod.make_tag(fp["host"], "tarpit", "too many objects. More follows")
             mod.store(tag)
     mod.itemize(q, ev, orient="rows")
 
@@ -97,8 +93,8 @@ def tarpit_init(mod: Module) -> None:
     )
 
 tarpit_reg = new_registry("tarpit").add(
-    new_module(TAGGER, "modbus", modbus_tarpit, tarpit_init),
-    new_module(TAGGER, "iec104", iec_tarpit, tarpit_init)
+    new_module("t", "modbus", modbus_tarpit, tarpit_init),
+    new_module("t", "iec104", iec_tarpit, tarpit_init)
 )
 
 hostility_reg = new_registry("hostility").add_group(tarpit_reg)

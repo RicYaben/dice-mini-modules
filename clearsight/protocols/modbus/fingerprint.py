@@ -1,9 +1,7 @@
 from dice.modules import Module, new_module, make_fp_handler
 from dice.helpers import get_record_field
-from dice.config import FINGERPRINTER
 import pandas as pd
 import numpy as np
-
 
 def get_object(objs: list[dict], key):
     for k, v in objs:
@@ -25,4 +23,4 @@ modbus_fp_handler = make_fp_handler(fingerprint, "modbus")
 
 
 def make_fingerprinter() -> Module:
-    return new_module(FINGERPRINTER, "modbus", modbus_fp_handler)
+    return new_module("f", "modbus", modbus_fp_handler)

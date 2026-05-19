@@ -1,6 +1,5 @@
 from copy import copy
 from dice.modules import Module, new_module, make_fp_handler
-from dice.config import FINGERPRINTER
 from dice.helpers import get_record_field
 from dice.records import Service
 
@@ -98,4 +97,4 @@ def fingerprint(row: pd.Series) -> dict | None:
 mqtt_fp_handler = make_fp_handler(fingerprint, "mqtt")
 
 def make_fingerprinter() -> Module:
-    return new_module(FINGERPRINTER, "mqtt", mqtt_fp_handler)
+    return new_module("f", "mqtt", mqtt_fp_handler)

@@ -1,5 +1,4 @@
 from dice.modules import Module, new_module
-from dice.config import CLASSIFIER
 from dice.query import query_db
 import pandas as pd
 
@@ -36,4 +35,4 @@ def mqtt_cls_handler(mod: Module) -> None:
     mod.itemize(q, handler, orient="rows")
 
 def make_classifier() -> Module:
-    return new_module(CLASSIFIER, "mqtt", mqtt_cls_handler, mqtt_cls_init)
+    return new_module("c", "mqtt", mqtt_cls_handler, mqtt_cls_init)

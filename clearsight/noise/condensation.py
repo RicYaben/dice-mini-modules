@@ -1,6 +1,5 @@
 from dice.modules import Module, new_module, new_registry
-from dice.query import query_prefix_hosts, query_records
-from dice.config import TAGGER
+from dice.query import query_prefix_hosts, query_db
 
 from sklearn.linear_model import LinearRegression
 from sklearn.mixture import GaussianMixture
@@ -87,8 +86,7 @@ def tag_condensed(mod: Module, p_dense: float = 0.95) -> None:
     # TODO: this could be improved imo.
     with tqdm(total=len(dense_df), desc="condensation") as pbar:
         for _, row in dense_df.iterrows():
-            _, hosts = repo.query(query_records("hosts", prefix=row["prefix"]))
-            for h in hosts:
+            for h in repo.stream(query_db("host", prefix=row["prefix"])):
                 mod.store(mod.make_tag(
                     h["ip"],
                     "dense",
@@ -100,6 +98,6 @@ def condensation_init(mod: Module) -> None:
     mod.register_tag("dense", "Condensation model to estimate whether a prefix is abnormally populated based on how dense other prefixes of similar size are")
 
 def make_condensation_module() -> Module:
-    return new_module(TAGGER, "dense", tag_condensed, condensation_init)
+    return new_module("t", "dense", tag_condensed, condensation_init)
 
 condensation_reg = new_registry("condensation").add(make_condensation_module())

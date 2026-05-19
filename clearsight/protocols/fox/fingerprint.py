@@ -1,6 +1,5 @@
 from dice.modules import Module, new_module, make_fp_handler
 from dice.helpers import get_record_field, record_to_dict
-from dice.config import FINGERPRINTER
 
 def fingerprint(row) -> dict | None:
     is_fox = get_record_field(row, "is_fox", False)
@@ -11,4 +10,4 @@ def fingerprint(row) -> dict | None:
 fox_fp_handler = make_fp_handler(fingerprint, "fox")
 
 def make_fingerprinter() -> Module:
-    return new_module(FINGERPRINTER, "fox", fox_fp_handler)
+    return new_module("f", "fox", fox_fp_handler)

@@ -1,5 +1,4 @@
 from dice.modules import Module, new_module
-from dice.config import CLASSIFIER
 from dice.query import query_db
 import pandas as pd
 
@@ -16,10 +15,10 @@ def modbus_cls_handler(mod: Module) -> None:
         mask = mask.any(axis=1)
 
         for fp in df[mask].itertuples(index=False):
-            mod.store(mod.make_label(str(fp.id), "anonymous-connection"))
+            mod.store(mod.make_label(fp.id, "anonymous-connection"))
             
     q = query_db("fingerprints", protocol="modbus")
     mod.itemize(q, handler, orient="dataframe")
 
 def make_classifier() -> Module:
-    return new_module(CLASSIFIER, "modbus", modbus_cls_handler, modbus_cls_init)
+    return new_module("f", "modbus", modbus_cls_handler, modbus_cls_init)

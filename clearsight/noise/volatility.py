@@ -1,5 +1,4 @@
 from dice.modules import Module, new_module, new_registry
-from dice.config import TAGGER
 
 from typing import Any, Generator
 from difflib import ndiff
@@ -118,10 +117,10 @@ def volatility_init(mod: Module) -> None:
     mod.register_tag("mtd-different", "Host changed properties")
 
 def make_mtd_inter_module() -> Module:
-    return new_module(TAGGER, "mtd-intermitent", tag_mtd_intermitent, volatility_init)
+    return new_module('t', "mtd-intermitent", tag_mtd_intermitent, volatility_init)
 
 def make_mtd_diff_module() -> Module:
-    return new_module(TAGGER, "mtd-different", tag_mtd_different, volatility_init)
+    return new_module("t", "mtd-different", tag_mtd_different, volatility_init)
 
 mtd_reg = new_registry("mtd").add(
     make_mtd_diff_module(),

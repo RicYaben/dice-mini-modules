@@ -1,7 +1,6 @@
 from dice.modules import Module, new_registry, new_module
 from dice.models import HostTag
 from dice.query import query_db
-from dice.config import TAGGER
 
 import pandas as pd
 
@@ -14,7 +13,7 @@ def enip_odd(mod: Module) -> None:
             f.port,
             f.protocol,
             CAST(j.value AS BIGINT) AS serial
-        FROM fingerprints f,
+        FROM fingerprint f,
             json_tree(f.data, '$.items') AS j
         WHERE f.protocol = 'ethernetip'
         AND j.key = 'serial'
@@ -90,7 +89,7 @@ def iec_odd(mod: Module) -> None:
             if tag := ev(fp):
                 mod.store(tag)
 
-    q = query_db("fingerprints", protocol="iec104")
+    q = query_db("fingerprint", protocol="iec104")
     mod.with_pbar(handler, q)
 
 def dicom_odd(mod: Module) -> None:
@@ -130,7 +129,7 @@ def dicom_odd(mod: Module) -> None:
                 "Association accepted, but Implementation UID missing"
             ))
 
-    q = query_db("fingerprints", protocol="DICOM")
+    q = query_db("fingerprint", protocol="dicom")
     mod.with_pbar(handler, q, desc="dicom-odd")
 
 
@@ -141,14 +140,14 @@ def odd_init(mod: Module) -> None:
     mod.register_tag("mal2", "Malformed response")
 
 def make_odd_dicom_module() -> Module:
-    return new_module(TAGGER, "dicom", dicom_odd, odd_init)
+    return new_module("t", "dicom", dicom_odd, odd_init)
 
 def make_odd_iec104_module() -> Module:
-    return new_module(TAGGER, "iec104", iec_odd, odd_init)
+    return new_module("t", "iec104", iec_odd, odd_init)
 
 
 def make_odd_enip_module() -> Module:
-    return new_module(TAGGER, "ethernetip", enip_odd, odd_init)
+    return new_module("t", "ethernetip", enip_odd, odd_init)
 
 
 odd_reg = new_registry("odd").add(make_odd_iec104_module(), make_odd_enip_module(), make_odd_dicom_module())

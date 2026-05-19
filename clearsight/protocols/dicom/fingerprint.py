@@ -1,6 +1,5 @@
 import base64
 from dice.modules import Module, new_module, make_fp_handler
-from dice.config import FINGERPRINTER
 from dice.helpers import get_record_field 
 
 def fingerprint(row) -> dict | None:
@@ -43,4 +42,4 @@ def fingerprint(row) -> dict | None:
 dicom_fp_handler = make_fp_handler(fingerprint, "dicom")
 
 def make_fingerprinter() -> Module:
-    return new_module(FINGERPRINTER, "dicom", dicom_fp_handler)
+    return new_module("f", "dicom", dicom_fp_handler)

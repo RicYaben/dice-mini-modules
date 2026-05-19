@@ -1,7 +1,6 @@
 from dice.modules import Module, ModuleHandler, new_module
 from dice.helpers import get_record_field 
 from dice.query import query_records
-from dice.config import FINGERPRINTER
 
 import base64
 import struct
@@ -173,12 +172,16 @@ def make_ethernetip_fp_handler_from_db() -> ModuleHandler:
                 mod.store(mod.make_fingerprint(r, fp, "ethernetip"))
         
         repo = mod.repo()
-        vendors = repo.get_records(source="eip_vendors", prefix=None)
-        devices = repo.get_records(source="eip_devices", prefix=None)
+
+        _, vg = repo.query(query_records(source="eip_vendors", prefix=None))
+        vendors = pd.concat([b for b in vg], ignore_index=True)
+
+        _, dg = repo.query(query_records("eip_devices", prefix=None))
+        devices = pd.concat([b for b in dg], ignore_index=True)
 
         q = query_records("zgrab2", protocol="ethernetip")
         mod.itemize(q, handler, orient="rows")
     return wrapper
 
 def make_fingerprinter() -> Module:
-    return new_module(FINGERPRINTER, "ethernetip", make_ethernetip_fp_handler_from_db())
+    return new_module("f", "ethernetip", make_ethernetip_fp_handler_from_db())
