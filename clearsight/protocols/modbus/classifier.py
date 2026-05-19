@@ -15,7 +15,7 @@ def modbus_cls_handler(mod: Module) -> None:
         mask = mask.any(axis=1)
 
         for fp in df[mask].itertuples(index=False):
-            mod.store(mod.make_label(fp.id, "anonymous-connection"))
+            mod.store(mod.make_label(int(fp.id), "anonymous-connection")) # type: ignore
             
     q = query_db("fingerprints", protocol="modbus")
     mod.itemize(q, handler, orient="dataframe")

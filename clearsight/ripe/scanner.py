@@ -6,8 +6,7 @@ from dice.query import query_db
 import requests
 import pandas as pd
 
-from .models import Prefix
-from .helpers import PrefixTree
+from .helpers import Prefix, PrefixTree
 
 API = "https://stat.ripe.net/data"
 ENDPOINTS = {
@@ -56,7 +55,7 @@ def fetch_prefixes(mod: Module):
             host["asn"] = prefix.asn
             mod.store(Host.from_series(host))
 
-    mod.with_pbar(handler, query_db("hosts", prefix=""), desc="prefixes", bsize=10)
+    mod.with_pbar(handler, query_db("host", prefix=""), desc="prefixes", bsize=10)
 
 def make_asn_scn() -> ModuleHandler:
     def handler(mod: Module) -> None:

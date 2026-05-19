@@ -1,7 +1,13 @@
+from dataclasses import dataclass
+from dice.models import Model
+
 import pandas as pd
 import pytricia
 
-from clearsight.ripe.models import Prefix
+@dataclass
+class Prefix(Model):
+    prefix: str
+    asn: str
 
 class PrefixTree:
     """A fast prefix tree using PyTricia."""
