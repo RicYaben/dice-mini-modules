@@ -7,7 +7,7 @@ from .noise import registry as noise_registry
 from .cti import registry as cti_reg
 from .ripe import registry as ripe_reg
 
-registry = new_registry("modules")
+registry = new_registry("clearsight")
 registry.add_groups([
     noise_registry,
     cti_reg,

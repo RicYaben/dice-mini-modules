@@ -65,11 +65,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dice = [
-    "dice-mini @ file:///absolute/path/to/dice-mini",
+    "dice-mini==0.2.0",
 ]
 
 [tool.setuptools]
 packages = ["clearsight"]
 
-[project.entry-points."dice.modules"]
+[project.entry-points."clearsight"]
 registry = "clearsight:registry"

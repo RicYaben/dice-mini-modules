@@ -1,4 +1,5 @@
 from copy import copy
+from enum import Enum
 from dice.modules import Module, new_module, make_fp_handler
 from dice.helpers import get_record_field
 from dice.records import Service
@@ -7,32 +8,32 @@ from packaging.version import parse, InvalidVersion
 
 import pandas as pd
 
-BROKERS: dict[str, Service] = {
-    "vernemq": Service(
-        name="VerneMQ", 
-        vendor="Octabolabs", 
+
+class Brokers(Enum):
+    vernemq = Service(
+        name="VerneMQ",
+        vendor="Octabolabs",
         cpe="cpe:2.3:a:octavolabs:vernemq:*:*:*:*:*:*:*:*",
         version=None,
-    ),
-    "mosquitto": Service(
-        name="Mosquitto", 
-        vendor="Eclipse", 
-        cpe="cpe:2.3:a:eclipse:mosquitto:*:*:*:*:*:*:*:*", 
-        version=None
-    ),
-    "activemq": Service(
+    )
+    mosquitto = Service(
+        name="Mosquitto",
+        vendor="Eclipse",
+        cpe="cpe:2.3:a:eclipse:mosquitto:*:*:*:*:*:*:*:*",
+        version=None,
+    )
+    activemq = Service(
         name="ActiveMQ",
         vendor="Apache",
         cpe="cpe:2.3:a:apache:activemq:*:*:*:*:*:*:*:*",
-        version=None
-    ),
+        version=None,
+    )
 
-}
 
 def get_hub(topics: list[tuple[str, list[str]]]) -> Service | None:
     hub = Service("", None, None, None)
     for topic, msgs in topics:
-        msg = msgs[0] # first message
+        msg = msgs[0]  # first message
         match topic:
             case _ if topic.endswith("/sysdescr"):
                 hub.name = msg
@@ -41,27 +42,28 @@ def get_hub(topics: list[tuple[str, list[str]]]) -> Service | None:
 
         if hub.name and hub.version:
             return hub
-        
+
+
 def get_broker(topics: list[tuple[str, list[str]]]) -> Service | None:
     for topic, msgs in topics:
         match topic:
             case "$SYS/brokers":
                 return get_hub(topics)
-            
+
             case s if s.startswith("$SYS/VerneMQ"):
-                return copy(BROKERS["vernemq"])
-            
+                return copy(Brokers.vernemq.value)
+
             case s if s.startswith(("$SYS/ActiveMQ", "ActiveMQ/")):
-                return copy(BROKERS["activemq"])
-            
+                return copy(Brokers.activemq.value)
+
             case "$SYS/broker/version":
                 v = msgs[0] if msgs else ""
 
                 if "mosquito" in v:
-                    b = copy(BROKERS["mosquitto"])
+                    b = copy(Brokers.mosquitto.value)
                     b.version = str(parse(v.split("mosquitto version")[1]))
                     return b
-                
+
                 bversion = v.split("version")
                 pv = None
                 try:
@@ -75,26 +77,30 @@ def get_broker(topics: list[tuple[str, list[str]]]) -> Service | None:
                     vendor=None,
                     cpe=None,
                 )
-                return broker    
-                    
+                return broker
+
 
 def fingerprint(row: pd.Series) -> dict | None:
     # check if we connected at all or the broker refused
     # the communication
-    topics=get_record_field(row, "topics", [])
+    topics = get_record_field(row, "topics", [])
     if not topics:
         return
-    
+
     data = {
         "access": ["read"],
-        "authentication": "anonymous" if row.get("scheme") == "tcp" else "self-signed-certificate",
+        "authentication": (
+            "anonymous" if row.get("scheme") == "tcp" else "self-signed-certificate"
+        ),
     }
-    
+
     if broker := get_broker(topics):
         data["topics"] = topics
         data["service"] = broker.__dict__
 
+
 mqtt_fp_handler = make_fp_handler(fingerprint, "mqtt")
+
 
 def make_fingerprinter() -> Module:
     return new_module("f", "mqtt", mqtt_fp_handler)
