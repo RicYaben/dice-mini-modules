@@ -1,10 +1,11 @@
-from dice.modules import new_registry
-from .classifier import make_classifier
-from .fingerprint import make_fingerprinter
+from dice.internal.modules import new_registry
+from .classifier import mqtt_classifier
+from .fingerprint import mqtt_fingerprinter
 
-registry = new_registry("mqtt").add(
-    make_classifier(), 
-    make_fingerprinter()
+registry = (
+    new_registry("mqtt")
+    .register(mqtt_classifier())
+    .register(mqtt_fingerprinter())
 )
 
 __all__ = [

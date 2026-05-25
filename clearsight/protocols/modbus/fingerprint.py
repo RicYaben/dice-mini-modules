@@ -1,26 +1,22 @@
-from dice.modules import Module, new_module, make_fp_handler
-from dice.helpers import get_record_field
-import pandas as pd
-import numpy as np
-
-def get_object(objs: list[dict], key):
-    for k, v in objs:
-        if k == key:
-            return str(v).strip() if v else None
+from dice.shared.repository import FRepo
+from dice.shared.models import Record
+from dice.experimental import query
+from dice.sdk import Module
 
 
-def fingerprint(row: pd.Series) -> dict | None:
-    mei = get_record_field(row, "mei_response", {})
-    if not mei or mei is np.nan:
-        return
+def run(repo: FRepo, *args, **kwargs) -> None:
+    q = query(Record, data={"data.mei_response__ne":None}, protocol="modbus")
 
-    objects = mei.pop("objects", {})
-    ret = {**mei, **objects, "unit_id": get_record_field(row, "unit_id", 0)}
-    return ret
+    for r in repo.search(q):
+        mei = r["mei_response"]
+        objects = mei.pop("objects", {})
+        data = {**mei, **objects, "unit_id": r.get("unit_id", 0)}
+        repo.fingerprint(r["host"], r["id"], data, protocol=r["protocol"])
 
-
-modbus_fp_handler = make_fp_handler(fingerprint, "modbus")
-
-
-def make_fingerprinter() -> Module:
-    return new_module("f", "modbus", modbus_fp_handler)
+def modbus_fingerprinter() -> Module:
+    return (
+        Module(
+            "f", "modbus", 
+            run_fn=run,
+        )
+    )

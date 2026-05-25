@@ -15,8 +15,8 @@ def bloated_q(threshold: int | None = None) -> str:
         COUNT(DISTINCT z.port) AS zpcount,
         LIST(DISTINCT f.port) as fports,
         LIST(DISTINCT z.port) as zports,
-    FROM fingerprints AS f
-    LEFT JOIN records_zgrab2 AS z
+    FROM fingerprint AS f
+    LEFT JOIN zgrab2_records AS z
         ON f.host = z.ip
     GROUP BY f.host
     {clause}

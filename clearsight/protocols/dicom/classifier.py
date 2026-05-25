@@ -1,29 +1,27 @@
-from dice.modules import Module, new_module
-from dice.query import query_db
-import pandas as pd
+from dice.shared.repository import CRepo
+from dice.shared.models import Fingerprint
+from dice.experimental import query
+from dice.sdk import Module
 
-def dicom_cls_init(mod: Module) -> None:
-    mod.register_label(
-        "anonymous-association",
-        "allows unauthenticated clients to associate",
+
+def run(repo: CRepo, *args, **kwargs) -> None:
+    q = query(Fingerprint, protocol="dicom")
+    for r in repo.search(q):
+        repo.label(r["id"], "anonymous-association")
+
+        if r["echo_status"] == "AAA=":
+            repo.label(r["id"], "echo-response")
+
+def dicom_classifier() -> Module:
+    return (
+        Module(
+            "c", "dicom", 
+            run_fn=run,
+        ).add_label(
+            "anonymous-association",
+            "allows unauthenticated clients to associate",
+        ).add_label(
+            "echo-response",
+            "allows unauthenticated clients to send ECHO requests"
+        )
     )
-    mod.register_label(
-        "echo-response",
-        "allows unauthenticated clients to send ECHO requests"
-    )
-
-def dicom_cls_handler(mod: Module) -> None:
-    def handler(row: pd.Series):
-        fid = row["id"]
-
-        # Success echo response
-        # https://dicom.nema.org/medical/dicom/current/output/chtml/part07/sect_9.3.5.2.html
-        # 0x0000 as base64 = "AAA="
-        if row["data_echo_status"] == "AAA=":
-            mod.store(mod.make_label(fid, "echo-response"))
-
-    q = query_db("fingerprint", protocol="dicom")
-    mod.itemize(q, handler, orient="rows")
-
-def make_classifier() -> Module:
-    return new_module("c", "dicom", dicom_cls_handler, dicom_cls_init)

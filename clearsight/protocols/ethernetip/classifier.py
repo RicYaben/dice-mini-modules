@@ -1,22 +1,21 @@
-from dice.modules import Module, new_module
-from dice.query import query_db
+from dice.shared.repository import CRepo
+from dice.shared.models import Fingerprint
+from dice.experimental import query
+from dice.sdk import Module
 
-def ethernetip_cls_init(mod: Module) -> None: 
-    mod.register_label(
-        "anonymous-connection",
-        "allows unauthenticatied clients to communicate"
+
+def run(repo: CRepo, *args, **kwargs) -> None:
+    q = query(Fingerprint, protocol="ethernetip", **{"data.vendor_name__ne":None})
+    for r in repo.search(q):
+        repo.label(r["id"], "anonymous-connection")
+
+def enip_classifier() -> Module:
+    return (
+        Module(
+            "c", "ethernetip", 
+            run_fn=run,
+        ).add_label(
+            "anonymous-connection",
+            "allows unauthenticatied clients to communicate"  
+        )
     )
-
-def ethernetip_cls_handler(mod: Module) -> None:
-    def handle(row):
-        items = row.get("data_items", []) 
-        if isinstance(items, list):
-            for it in items:
-                if "vendor_name" in it:
-                    mod.store(mod.make_label(row["id"], "anonymous-connection"))
-
-    q =query_db("fingerprint", protocol="ethernetip")
-    mod.itemize(q, handle, orient="rows")
-
-def make_classifier() -> Module:
-    return new_module("c", "ethernetip", ethernetip_cls_handler, ethernetip_cls_init)

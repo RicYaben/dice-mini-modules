@@ -1,13 +1,27 @@
-from dice.modules import Module, new_module, new_registry
+import logging
+
+from dice.internal.modules import new_registry
+from dice.shared.repository import SearchResult, TRepo
+from dice.shared.models import Fingerprint
+from dice.experimental import query
+from dice.sdk import Module, Flags, flag
 from tdigest import TDigest
 
-def is_timeout(fp) -> bool:
-    return fp["probe_status"] == "io-timeout" and fp["data"]
+def cut(res: SearchResult, col: str, t: int, minimum: int = 0) -> int:
+    digest = TDigest()
+    for r in res:
+        r.update(r["col"])
+    thresh = digest.percentile(t)
+    if thresh < minimum:
+        thresh = minimum
+    req = digest.percentile(thresh)
+    return req
 
+class TFlags(Flags):
+    percentile: int = flag(95, "percentile to set threshold on the number of objects returned to consider a service hostile")
+    minimum: int = flag(5, "minimum number of objects over the percentile")
 
-def iec_tarpit(mod: Module) -> None:
-    "Calculate the distribution of IOAs and return when crosses the 95prc"
-
+def iec104_run(repo: TRepo, flags: TFlags, logger: logging.Logger) -> None:
     q = """
     SELECT
         host,
@@ -20,7 +34,7 @@ def iec_tarpit(mod: Module) -> None:
             f.protocol,
             f.port,
             json_extract(ioa.value, '$') AS ioa
-        FROM fingerprints f
+        FROM fingerprint f
         -- explode asdus[]
         CROSS JOIN json_each(json_extract(f.data, '$.asdus')) AS asdus
         -- explode asdus[].IOAs[]
@@ -31,70 +45,33 @@ def iec_tarpit(mod: Module) -> None:
     GROUP BY host, protocol, port
     """
 
-    digest = TDigest()
-    _, gen = mod.repo().query(q)
-    for r in gen:
-        digest.update(r["cioas36"])
+    res = repo.search(q)
+    req = cut(res, "cioas36", flags.percentile, flags.minimum)
 
-    threshold = digest.percentile(95)
+    for r in repo.search(q):
+        if len(r["cioas36"]) > req:
+            repo.tag(r["ip"], "tarpit", "IEC-104 tarpit")
 
-    def ev(fp) -> None:
-        # If it timed out and the number of IOAs with type 36 (M_ME_TF_1), a measured value with timestamp
-        # is very large, then flag this
-        if fp["cioas36"] > threshold:
-            tag = mod.make_fp_tag(fp, "tarpit", "too many IOAs")
-            mod.store(tag)
-    mod.itemize(q, ev, orient="rows")
+def modbus_run(repo: TRepo, flags: TFlags, logger: logging.Logger) -> None:
+    q = query(Fingerprint, protocol="modbus")
+    res = repo.search(q)
+    req = cut(res, "objects", flags.percentile, flags.minimum)
 
+    for r in res:
+        if len(r["objects"]) > req:
+            repo.tag(r["ip"], "tarpit", "Modbus tarpit")
 
-def modbus_tarpit(mod: Module) -> None:
-    "Too many objects in the mei response"
+ttag = (
+    "tarpit",
+    "Determines whether a service is a tarpit by picking lengthy connections with abnormally large amounts of data",
+)
 
-    q = """
-        WITH extracted AS (
-        SELECT
-            f.host,
-            f.protocol,
-            f.port,
-            CAST(json_extract(f.data, '$.objects') AS JSON) AS objects,
-            CAST(json_extract(f.data, '$.more_follows') AS BOOLEAN) AS more_follows
-        FROM fingerprints f
-        WHERE f.protocol = 'modbus'
-    )
-    SELECT DISTINCT(host), protocol, port, COUNT(*) AS count
-    FROM extracted
-    WHERE more_follows = TRUE
-    GROUP BY host, protocol, port, objects
-    ORDER BY count DESC
-    """
-
-    digest = TDigest()
-
-    _, gen = mod.repo().query(q)
-    for r in gen:
-        digest.update(r["count"])
-    threshold = digest.percentile(95)
-    # 5 is the minimum required objects in the
-    # mei response
-    MIN_REQUIRED = 5
-    if threshold < MIN_REQUIRED:
-        threshold = MIN_REQUIRED
-
-    def ev(fp) -> None:
-        if fp["count"] > threshold:
-            tag = mod.make_tag(fp["host"], "tarpit", "too many objects. More follows")
-            mod.store(tag)
-    mod.itemize(q, ev, orient="rows")
-
-def tarpit_init(mod: Module) -> None:
-    mod.register_tag(
-        "tarpit",
-        "Determines whether a service is a tarpit by picking lengthy connections with abnormally large amounts of data",
-    )
-
-tarpit_reg = new_registry("tarpit").add(
-    new_module("t", "modbus", modbus_tarpit, tarpit_init),
-    new_module("t", "iec104", iec_tarpit, tarpit_init)
+tarpit_reg = new_registry("tarpit").register(
+    Module("t", "modbus", run_fn=modbus_run, flags=TFlags)
+    .add_tag(*ttag)
+).register(
+    Module("t", "iec104", run_fn=iec104_run, flags=TFlags)
+    .add_tag(*ttag)
 )
 
 hostility_reg = new_registry("hostility").add_group(tarpit_reg)

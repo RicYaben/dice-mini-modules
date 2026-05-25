@@ -1,6 +1,9 @@
-from dice.modules import Module, ModuleHandler, new_module
-from dice.helpers import get_record_field 
-from dice.query import query_records
+import logging
+
+from dice.shared.repository import FRepo
+from dice.shared.models import Record
+from dice.sdk import Flags, Module
+from dice.experimental import query
 
 import base64
 import struct
@@ -161,27 +164,26 @@ def parse_list_identity(data: str, vendors: pd.DataFrame, devices: pd.DataFrame)
     lid["items"] = items
     return lid
 
-def fingerprint(row: pd.Series, vendors: pd.DataFrame, devices: pd.DataFrame):
-    if pd.notna((idt := get_record_field(row, "ListIdentityRaw_Response"))):
-        return parse_list_identity(idt, vendors, devices)
+class EnipFlags(Flags):
+    vendors: str = "vendors.csv"
+    devices: str = "devices.csv"
 
-def make_ethernetip_fp_handler_from_db() -> ModuleHandler:
-    def wrapper(mod: Module) -> None:
-        def handler(r):
-            if fp := fingerprint(r, vendors, devices):
-                mod.store(mod.make_fingerprint(r, fp, "ethernetip"))
-        
-        repo = mod.repo()
+def run(repo: FRepo, flags: EnipFlags, logger: logging.Logger) -> None:
+    # TODO: read_csv needs to exist
+    vendors = read_csv(flags.vendors)
+    devices = read_csv(flags.devices)
 
-        _, vg = repo.query(query_records(source="eip_vendors", prefix=None))
-        vendors = pd.concat([b for b in vg], ignore_index=True)
+    q = query(Record, protocol="ethernetip", **{"data.ListIdentityRaw_Response__ne":None})
+    for r in repo.search(q):
+        idt = r["ListIdentityRaw_Response"]
+        data = parse_list_identity(idt, vendors, devices)
+        repo.fingerprint(r["host"], r["id"], data, protocol=r["protocol"])
 
-        _, dg = repo.query(query_records("eip_devices", prefix=None))
-        devices = pd.concat([b for b in dg], ignore_index=True)
-
-        q = query_records("zgrab2", protocol="ethernetip")
-        mod.itemize(q, handler, orient="rows")
-    return wrapper
-
-def make_fingerprinter() -> Module:
-    return new_module("f", "ethernetip", make_ethernetip_fp_handler_from_db())
+def enip_fingerprinter() -> Module:
+    return (
+        Module(
+            "f", "ethernetip",
+            flags=EnipFlags, 
+            run_fn=run,
+        )
+    )

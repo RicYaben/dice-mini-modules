@@ -1,10 +1,11 @@
-from dice.modules import new_registry
-from .classifier import make_classifier
-from .fingerprint import make_fingerprinter
+from dice.internal.modules import new_registry
+from .classifier import fox_classifier
+from .fingerprint import fox_fingerprinter
 
-registry = new_registry("fox").add(
-    make_classifier(), 
-    make_fingerprinter()
+registry = (
+    new_registry("fox")
+    .register(fox_classifier()) 
+    .register(fox_fingerprinter())
 )
 
 __all__ = [

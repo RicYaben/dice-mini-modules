@@ -1,9 +1,13 @@
 import base64
-from dice.modules import Module, new_module, make_fp_handler
-from dice.helpers import get_record_field 
+
+from dice.shared.repository import FRepo
+from dice.shared.models import Record
+from dice.experimental import query
+from dice.sdk import Module
+
 
 def fingerprint(row) -> dict | None:
-    assoc = get_record_field(row, "association", None)
+    assoc = row.get("association", None)
     # bad response
     if not assoc:
         return
@@ -19,7 +23,7 @@ def fingerprint(row) -> dict | None:
         "version": None
     }
 
-    if echo:=get_record_field(row, "echo", None):
+    if echo:=row.get("echo", None):
         for cmd in echo.get("Msg").get("Commands"):
             if cmd.get("ElementTag") == 0x900:
                 data["echo_status"] = cmd.get("Value")
@@ -39,7 +43,21 @@ def fingerprint(row) -> dict | None:
     
     return data
 
-dicom_fp_handler = make_fp_handler(fingerprint, "dicom")
+# class DicomFlags(Flags):
+#     services: str = flag("services.csv", "Path to CSV containing services info")
 
-def make_fingerprinter() -> Module:
-    return new_module("f", "dicom", dicom_fp_handler)
+def run(repo: FRepo, *args, **kwargs) -> None:
+    q = query(Record, protocol="dicom")
+    for r in repo.search(q):
+        if data:=fingerprint(r):
+            repo.fingerprint(r["host"], r["id"], data, protocol=r["protocol"])
+
+def dicom_fingerprintetr() -> Module:
+    return (
+        Module(
+            "f", "dicom",
+            #flags=DicomFlags,
+            run_fn=run,
+        )
+    )
+

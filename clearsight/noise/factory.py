@@ -1,4 +1,4 @@
-from dice.modules import Module
+from dice.sdk import Module
 
 from typing import Callable, Any, Generic, TypeVar
 

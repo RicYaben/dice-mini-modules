@@ -1,13 +1,20 @@
-from dice.modules import Module, new_module, make_fp_handler
-from dice.helpers import get_record_field, record_to_dict
+from dice.shared.repository import FRepo
+from dice.shared.query import query
+from dice.shared.models import Record
+from dice.sdk import Module
 
-def fingerprint(row) -> dict | None:
-    is_fox = get_record_field(row, "is_fox", False)
-    version = get_record_field(row, "version")
-    if is_fox and version:
-        return record_to_dict(row)
 
-fox_fp_handler = make_fp_handler(fingerprint, "fox")
+def run(repo: FRepo, *args, **kwargs) -> None:
+    # TODO: This means: look into records, query the db into a view,
+    # normalize the json data into columns without the prefix, and query the view
+    q = query(Record, protocol="fox", data={"is_fox":True, "version__ne":None})
+    for r in repo.search(q):
+        repo.fingerprint(r["host"], r["id"], r["data"], protocol=r["protocol"])
 
-def make_fingerprinter() -> Module:
-    return new_module("f", "fox", fox_fp_handler)
+def fox_fingerprinter() -> Module:
+    return (
+        Module(
+            "f", "fox", 
+            run_fn=run,
+        )
+    )

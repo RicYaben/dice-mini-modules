@@ -1,10 +1,11 @@
-from dice.modules import new_registry
-from .classifier import make_classifier
-from .fingerprint import make_fingerprinter
+from dice.internal.modules import new_registry
+from .classifier import enip_classifier
+from .fingerprint import enip_fingerprinter
 
-registry = new_registry("ethernetip").add(
-    make_classifier(), 
-    make_fingerprinter()
+registry = (
+    new_registry("ethernetip")
+    .register(enip_classifier())
+    .register(enip_fingerprinter())
 )
 
 __all__ = [

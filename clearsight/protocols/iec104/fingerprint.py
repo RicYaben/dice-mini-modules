@@ -1,19 +1,23 @@
-from dice.modules import Module, new_module, make_fp_handler
-from dice.helpers import get_record_field
-import pandas as pd
+from dice.shared.repository import FRepo
+from dice.shared.models import Record
+from dice.sdk import Module
+from dice.experimental import query
 
-def fingerprint(row: pd.Series) -> dict | None:
-    sdt = get_record_field(row, "startdt")
-    tfr = get_record_field(row, "testfr")
-    asdus = get_record_field(row, "interrogation", [])
-    if len(asdus):
-        return dict(
-            asdus=asdus,
-            sdt=sdt,
-            tfr=tfr
+
+def run(repo: FRepo, *args, **kwargs) -> None:
+    q = query(Record, protocol="iec104", **{"data.interrogation__ne":None})
+    for r in repo.search(q):
+        data = {
+            "asdus": r.get("interrogation"),
+            "sdt": r.get("startdt"),
+            "tfr": r.get("testfr")
+        }
+        repo.fingerprint(r["host"], r["id"], data, protocol=r["protocol"])
+
+def iec104_fingerprinter() -> Module:
+    return (
+        Module(
+            "f", "iec104", 
+            run_fn=run,
         )
-
-iec104_fp_handler = make_fp_handler(fingerprint, "iec104")
-
-def make_fingerprinter() -> Module:
-    return new_module("f", "iec104", iec104_fp_handler)
+    )

@@ -1,55 +1,61 @@
-from dice.modules import Module, new_module, new_registry
-from dice.query import query_prefix_hosts, query_db
-
-from sklearn.linear_model import LinearRegression
-from sklearn.mixture import GaussianMixture
-from tqdm import tqdm
-
+import logging
 import ipaddress
+
 import pandas as pd
 import numpy as np
 
-def describe_condensation(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Summarize condensation info grouped by prefix length (/n).
-    Shows descriptive statistics for size, density, and p_dense.
-    """
-    grouped = []
+from dice.internal.modules import new_registry
+from dice.shared.repository import TRepo
+from dice.shared.models import Host
+from dice.experimental import query
 
-    for slash, g in df.groupby("slash"):
-        sizes = g["size"]
-        densities = g["density"]
-        p_dense = g["p_dense"]
+from dice.sdk import Flags, Module
 
-        grouped.append({
-            "slash": slash,
-            "count_prefixes": len(g),
+from sklearn.linear_model import LinearRegression
+from sklearn.mixture import GaussianMixture
 
-            # size stats
-            "size_mean": sizes.mean(),
-            "size_p50": sizes.median(),
-            "size_p90": sizes.quantile(0.90),
-            "size_p99": sizes.quantile(0.99),
-            "size_min": sizes.min(),
-            "size_max": sizes.max(),
-            "size_total_hosts": sizes.sum(),
 
-            # density stats
-            "density_mean": densities.mean(),
-            "density_p50": densities.median(),
-            "density_p90": densities.quantile(0.90),
-            "density_p95": densities.quantile(0.95),
-            "density_p99": densities.quantile(0.99),
+# def describe_condensation(df: pd.DataFrame) -> pd.DataFrame:
+#     """
+#     Summarize condensation info grouped by prefix length (/n).
+#     Shows descriptive statistics for size, density, and p_dense.
+#     """
+#     grouped = []
 
-            # condensation (GMM probability)
-            "p_dense_mean": p_dense.mean(),
-            "p_dense_p90": p_dense.quantile(0.90),
-            "p_dense_p95": p_dense.quantile(0.95),
-            "p_dense_p99": p_dense.quantile(0.99),
-        })
+#     for slash, g in df.groupby("slash"):
+#         sizes = g["size"]
+#         densities = g["density"]
+#         p_dense = g["p_dense"]
 
-    summary = pd.DataFrame(grouped)
-    return summary.sort_values("slash")
+#         grouped.append({
+#             "slash": slash,
+#             "count_prefixes": len(g),
+
+#             # size stats
+#             "size_mean": sizes.mean(),
+#             "size_p50": sizes.median(),
+#             "size_p90": sizes.quantile(0.90),
+#             "size_p99": sizes.quantile(0.99),
+#             "size_min": sizes.min(),
+#             "size_max": sizes.max(),
+#             "size_total_hosts": sizes.sum(),
+
+#             # density stats
+#             "density_mean": densities.mean(),
+#             "density_p50": densities.median(),
+#             "density_p90": densities.quantile(0.90),
+#             "density_p95": densities.quantile(0.95),
+#             "density_p99": densities.quantile(0.99),
+
+#             # condensation (GMM probability)
+#             "p_dense_mean": p_dense.mean(),
+#             "p_dense_p90": p_dense.quantile(0.90),
+#             "p_dense_p95": p_dense.quantile(0.95),
+#             "p_dense_p99": p_dense.quantile(0.99),
+#         })
+
+#     summary = pd.DataFrame(grouped)
+#     return summary.sort_values("slash")
 
 def model_condensation(df: pd.DataFrame) -> None:
     df["slash"] = df["prefix"].apply(lambda p: f"/{ipaddress.ip_network(p).prefixlen}")
@@ -74,30 +80,30 @@ def model_condensation(df: pd.DataFrame) -> None:
     dense_component = np.argmax(gmm.means_)
     df["p_dense"] = probs[:, dense_component]
 
-def tag_condensed(mod: Module, p_dense: float = 0.95) -> None:
-    "Uses a model to determine prefix density and condensation"
-    repo = mod.repo()
-    prefixes = repo.connect().execute(query_prefix_hosts()).df()
-    model_condensation(prefixes)
 
-    # Filter rows instead of just prefixes
-    dense_df = prefixes[prefixes["p_dense"] > p_dense]
+def dense(pfx: list[dict], t: float) -> list[str]:
+    df = pd.DataFrame.from_records(pfx)
+    model_condensation(df)
+    dense = df[df["p_dense"] > t]
+    return dense["prefix"].tolist()
 
-    # TODO: this could be improved imo.
-    with tqdm(total=len(dense_df), desc="condensation") as pbar:
-        for _, row in dense_df.iterrows():
-            for h in repo.stream(query_db("host", prefix=row["prefix"])):
-                mod.store(mod.make_tag(
-                    h["ip"],
-                    "dense",
-                    details=f'probability: {row["p_dense"]:.3f}'
-                ))
-            pbar.update(1)
+class DFlags(Flags):
+    threshold: float = 0.95
 
-def condensation_init(mod: Module) -> None:
-    mod.register_tag("dense", "Condensation model to estimate whether a prefix is abnormally populated based on how dense other prefixes of similar size are")
+def run(repo: TRepo, flags: DFlags, logger: logging.Logger) -> None:
+    q = query(Host, fields=["prefix"], prefix__ne=None)
+    pfx = repo.search(q).all()
 
-def make_condensation_module() -> Module:
-    return new_module("t", "dense", tag_condensed, condensation_init)
+    dpfx = dense(pfx, flags.threshold)
+    
+    for r in repo.search(query(Host, fields=["ip"], prefix__in=dpfx)).all():
+        repo.tag(r["ip"], "dense", f'density: {r["p_dense"]:.3f}')
 
-condensation_reg = new_registry("condensation").add(make_condensation_module())
+condensation_reg = new_registry("condensation").register(
+        Module(
+            "t", "condensation",
+            flags=DFlags,
+            run_fn=run,
+        )
+        .add_tag("dense", "condensation model to estimate whether a prefix is abnormally populated based on how dense other prefixes of similar size are")
+    )
