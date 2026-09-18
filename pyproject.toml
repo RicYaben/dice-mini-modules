@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dice-mini-modules"
-version = "0.1.0"
+version = "0.3.0"
 description = "DICE mini modules"
 authors = [{ name = "Ricardo Yaben", email = "rmyl@dtu.dk" }]
 license = { text = "MIT" }
