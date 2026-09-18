@@ -1,12 +1,6 @@
-from dice.modules import new_registry
-from .classifier import make_classifier
-from .fingerprint import make_fingerprinter
+from dice.modules import registry
 
-registry = new_registry("dicom").add(
-    make_classifier(), 
-    make_fingerprinter()
-)
+from .classifier import dicom_classifier
+from .fingerprint import dicom_fingerprinter
 
-__all__ = [
-    "registry"
-]
+dicom = registry("dicom").register(dicom_classifier()).register(dicom_fingerprinter())

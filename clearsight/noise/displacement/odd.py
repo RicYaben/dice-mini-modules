@@ -1,8 +1,7 @@
-from dice.modules import Module, new_registry, new_module
-from dice.models import HostTag
-from dice.query import query_db
-
-import pandas as pd
+from dice.modules import registry
+from dice.sdk import Module, query
+from dice.shared.models import Fingerprint
+from dice.shared.repository import CRepo
 
 
 def enip_odd(mod: Module) -> None:
@@ -32,11 +31,25 @@ def enip_odd(mod: Module) -> None:
     JOIN counts c USING (serial)
     ORDER BY c.count DESC, e.serial
     """
+
     def it(fp):
         if int(fp.serial) == 0:
-            mod.store(mod.make_tag(str(fp.host), "odd", "0 serial", str(fp.protocol), int(fp.port)))
+            mod.store(
+                mod.make_tag(
+                    str(fp.host), "odd", "0 serial", str(fp.protocol), int(fp.port)
+                )
+            )
             return
-        mod.store(mod.make_tag(str(fp.host), "odd", f"reused {fp.count}", str(fp.protocol), int(fp.port)))
+        mod.store(
+            mod.make_tag(
+                str(fp.host),
+                "odd",
+                f"reused {fp.count}",
+                str(fp.protocol),
+                int(fp.port),
+            )
+        )
+
     mod.itemize(q_serial, it, orient="tuples")
 
 
@@ -48,8 +61,10 @@ def iec_odd(mod: Module) -> None:
     """
     # TODO: this should be an argument. Others may scan differently
     scanned = [1, 2, 10]
+
     def f100(asdu):
         return asdu["TypeID"] == 100 and asdu["CA"] in scanned
+
     def f36(asdu):
         return asdu["TypeID"] == 36
 
@@ -92,62 +107,56 @@ def iec_odd(mod: Module) -> None:
     q = query_db("fingerprint", protocol="iec104")
     mod.with_pbar(handler, q)
 
-def dicom_odd(mod: Module) -> None:
-    'Some echo honeypot that returns the Impl. Class UID and version as we sent it'
-    def handler(df: pd.DataFrame) -> None:
-        mask_echo = (
-            (df["data_uid"].eq("1.2.3.4.5")) |
-            (df["data_version"].eq("ZGRAB2"))
+
+def dicom_odd(repo: CRepo, *args, **kwargs) -> None:
+    q_echo = query(
+        Fingerprint,
+        protocol="dicom",
+        **{"data_uid": "1.2.3.4.5", "data_version": "ZGRAB2"},
+    )
+    for r in repo.search(q_echo):
+        repo.label(r["id"], "echo")
+
+    q_mal1 = query(Fingerprint, protocol="dicom", **{"data_response__in": [2, 3, 7]})
+    for r in repo.search(q_mal1):
+        repo.label(r["id"], "mal1")
+
+    q_mal2 = query(
+        Fingerprint, protocol="dicom", **{"data_uid": None, "data_response": 2}
+    )
+    for r in repo.search(q_mal2):
+        repo.label(r["id"], "mal2")
+
+
+def odd_iec104() -> Module:
+    return Module(
+        "c",
+        "iec104",
+        run_fn=odd_iec104,
+    ).add_label("odd", "Tags suspicious properties, e.g., reused serial number")
+
+
+def odd_enip() -> Module:
+    return Module(
+        "c",
+        "ethernetip",
+        run_fn=odd_enip,
+    ).add_label("odd", "Tags suspicious properties, e.g., reused serial number")
+
+
+def odd_dicom() -> Module:
+    return (
+        Module(
+            "c",
+            "dicom",
+            run_fn=odd_dicom,
         )
-        echo_rsp = df[mask_echo]
-        for _, fp in echo_rsp.iterrows():
-            mod.store(mod.make_fp_tag(
-                fp, 
-                "echo", 
-                "same UserInfo"
-            ))
-
-        # 2 and 3 are accept and reject assoc responses
-        # 7 is abort PDU
-        mal_rsp = df[~df["data_response"].isin((2,3,7))]
-        for _, fp in mal_rsp.iterrows():
-            mod.store(mod.make_fp_tag(
-                fp, 
-                "mal1", 
-                f"PDUType not ASSOC RSP, RJ, or abort: {fp['data_response']}"
-            ))
-
-        # malformed accepted associations: missing UID
-        mal_rsp2 = df[(
-            df["data_uid"].isna() &
-            df["data_response"].eq(2)
-        )]
-        for _, fp in mal_rsp2.iterrows():
-            mod.store(mod.make_fp_tag(
-                fp, 
-                "mal2", 
-                "Association accepted, but Implementation UID missing"
-            ))
-
-    q = query_db("fingerprint", protocol="dicom")
-    mod.with_pbar(handler, q, desc="dicom-odd")
+        .add_label("echo", "Echoed parameters")
+        .add_label("mal1", "Unexpected PDU Type")
+        .add_label("mal2", "Malformed response")
+    )
 
 
-def odd_init(mod: Module) -> None:
-    mod.register_tag("odd", "Tags suspicious properties, e.g., reused serial number")
-    mod.register_tag("echo", "Echoed parameters")
-    mod.register_tag("mal1", "Unexpected PDU Type")
-    mod.register_tag("mal2", "Malformed response")
-
-def make_odd_dicom_module() -> Module:
-    return new_module("t", "dicom", dicom_odd, odd_init)
-
-def make_odd_iec104_module() -> Module:
-    return new_module("t", "iec104", iec_odd, odd_init)
-
-
-def make_odd_enip_module() -> Module:
-    return new_module("t", "ethernetip", enip_odd, odd_init)
-
-
-odd_reg = new_registry("odd").add(make_odd_iec104_module(), make_odd_enip_module(), make_odd_dicom_module())
+odd_reg = (
+    registry("odd").register(odd_iec104()).register(odd_enip()).register(odd_dicom())
+)

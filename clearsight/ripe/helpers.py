@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from dice.models import Model
 
 import pandas as pd
 import pytricia
+from dice.shared.models import Model
+
 
 @dataclass
 class Prefix(Model):
     prefix: str
     asn: str
+
 
 class PrefixTree:
     """A fast prefix tree using PyTricia."""
@@ -31,11 +33,13 @@ class PrefixTree:
         """Return True if the IP is within any known prefix."""
         return addr in self.tree
 
+
 def build_prefix_tree(prefixes: list[Prefix]) -> PrefixTree:
     tree = PrefixTree()
     for p in prefixes:
         tree.add(p.prefix, p)
     return tree
+
 
 def build_resource_tree(flat: pd.DataFrame) -> PrefixTree:
     tree = PrefixTree()
@@ -44,6 +48,7 @@ def build_resource_tree(flat: pd.DataFrame) -> PrefixTree:
         prefix = rec["prefix"]
         tree.add(prefix, rec)
     return tree
+
 
 def flatten_resources(resources: pd.DataFrame) -> pd.DataFrame:
     # Remove prefix list column but keep other data

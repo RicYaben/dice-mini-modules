@@ -1,16 +1,17 @@
-import logging
-
-from dice.shared.repository import FRepo
-from dice.shared.models import Record
-from dice.sdk import Flags, Module
-from dice.experimental import query
-
 import base64
+import logging
 import struct
+
 import pandas as pd
+import ujson
+from dice.sdk import Flags, Module, query
+from dice.shared.models import Record
+from dice.shared.repository import FRepo
+
 
 def is_vendor_obsolete(data):
     return data[["DNet", "CNet", "ENet"]].lt(0).all()
+
 
 # vendors: https://marketplace.odva.org/vid.dat
 # if the number is negative, we should return a "deprecated" state
@@ -18,19 +19,20 @@ def get_vendor_network_status(vendors: pd.DataFrame, vendor_id: int) -> tuple[st
     r = vendors[vendors["vendor_id"] == vendor_id]
     if not len(r):
         return (f"Unknown ({vendor_id})", "unknown")
-    
+
     vrow = r.iloc[0]
     vname = vrow["Vendor Name"]
 
     if vrow["Vendor Name"] == "Reserved":
         return (vname, "reserved")
-    
+
     if vrow["ENet"] > 0:
-        return (vname,"active")
-    
+        return (vname, "active")
+
     if is_vendor_obsolete(vrow):
         return (vname, "obsolete")
     return (vname, "inactive")
+
 
 # devices: https://marketplace.odva.org/technologies/1-ethernet-ip/products#?vendors=all&productTypes=all&deviceTypes=all&docYears=all&categories=all&services=none&page=1&lang=en&view=search&productDisplay=all
 def get_device(devices: pd.DataFrame, device_id: int) -> str:
@@ -38,6 +40,7 @@ def get_device(devices: pd.DataFrame, device_id: int) -> str:
     if not len(d):
         return f"Unknown ({device_id})"
     return d.iloc[0]["Name"]
+
 
 STATUS_FLAGS = {
     0x0001: "Owned",
@@ -49,9 +52,11 @@ STATUS_FLAGS = {
     0x0040: "Extended Status Available",
 }
 
+
 def decode_status(status: int) -> list[str]:
     """Decode the Identity Object status bitfield into human-readable flags."""
     return [name for mask, name in STATUS_FLAGS.items() if status & mask]
+
 
 def parse_encapsulation_header(data: bytes) -> dict:
     """
@@ -62,7 +67,7 @@ def parse_encapsulation_header(data: bytes) -> dict:
 
     command, length, session, status = struct.unpack_from("<HHII", data, 0)
     sender_context = data[12:20]
-    options, = struct.unpack_from("<I", data, 20)
+    (options,) = struct.unpack_from("<I", data, 20)
 
     return {
         "command": command,
@@ -74,21 +79,24 @@ def parse_encapsulation_header(data: bytes) -> dict:
         "payload": data[24:],  # return remaining data for further parsing
     }
 
-def get_product_details(vendor: str, product: str) -> tuple[str,str,str]:
+
+def get_product_details(vendor: str, product: str) -> tuple[str, str, str]:
     """
     Returns the series of the product, the name of the product, and the version when possible
     """
     return (product, product, "")
 
 
-def parse_list_identity_item(item_data: bytes, vendors: pd.DataFrame, devices: pd.DataFrame) -> dict:
+def parse_list_identity_item(
+    item_data: bytes, vendors: pd.DataFrame, devices: pd.DataFrame
+) -> dict:
     """
     Parse a single ListIdentity Item (Identity object).
     """
 
-    protocol_version, = struct.unpack_from("<H", item_data, 0)
+    (protocol_version,) = struct.unpack_from("<H", item_data, 0)
     _, sin_port = struct.unpack_from("!HH", item_data, 2)
-    ip_raw, = struct.unpack_from("!I", item_data, 6)
+    (ip_raw,) = struct.unpack_from("!I", item_data, 6)
     ip_str = ".".join(map(str, ip_raw.to_bytes(4, "big")))
 
     vendor_id, device_type, product_code = struct.unpack_from("<HHH", item_data, 18)
@@ -97,7 +105,7 @@ def parse_list_identity_item(item_data: bytes, vendors: pd.DataFrame, devices: p
     vname, vstatus = get_vendor_network_status(vendors, vendor_id)
 
     prod_name_len = item_data[32]
-    pname_b = item_data[33:33 + prod_name_len]
+    pname_b = item_data[33 : 33 + prod_name_len]
     pname = pname_b.decode(errors="ignore")
     ps, pn, pv = get_product_details(vname, pname)
 
@@ -126,7 +134,10 @@ def parse_list_identity_item(item_data: bytes, vendors: pd.DataFrame, devices: p
 
     return item
 
-def parse_list_identity(data: str, vendors: pd.DataFrame, devices: pd.DataFrame) -> dict:
+
+def parse_list_identity(
+    data: str, vendors: pd.DataFrame, devices: pd.DataFrame
+) -> dict:
     """
     Parse a full ListIdentity response (encapsulation + identity items).
     """
@@ -139,20 +150,20 @@ def parse_list_identity(data: str, vendors: pd.DataFrame, devices: pd.DataFrame)
         "session": header["session"],
         "status": header["status"],
         "options": header["options"],
-        "identities": []
+        "identities": [],
     }
 
     if not payload:
         return lid
 
-    item_count, = struct.unpack_from("<H", payload, 0)
+    (item_count,) = struct.unpack_from("<H", payload, 0)
     items = []
     offset = 2
 
     for _ in range(item_count):
         item_type, item_length = struct.unpack_from("<HH", payload, offset)
         offset += 4
-        item_data = payload[offset:offset + item_length]
+        item_data = payload[offset : offset + item_length]
         offset += item_length
 
         if item_type == 0x0C:  # Identity item
@@ -160,30 +171,47 @@ def parse_list_identity(data: str, vendors: pd.DataFrame, devices: pd.DataFrame)
             items.append(identity)
             lid["identities"].append(identity)
         else:
-            items.append({"item_type": item_type, "raw": base64.b64encode(item_data).decode("utf-8")})
+            items.append(
+                {
+                    "item_type": item_type,
+                    "raw": base64.b64encode(item_data).decode("utf-8"),
+                }
+            )
     lid["items"] = items
     return lid
+
 
 class EnipFlags(Flags):
     vendors: str = "vendors.csv"
     devices: str = "devices.csv"
+
 
 def run(repo: FRepo, flags: EnipFlags, logger: logging.Logger) -> None:
     # TODO: read_csv needs to exist
     vendors = read_csv(flags.vendors)
     devices = read_csv(flags.devices)
 
-    q = query(Record, protocol="ethernetip", **{"data.ListIdentityRaw_Response__ne":None})
+    q = query(
+        Record, protocol="ethernetip", **{"data.ListIdentityRaw_Response__ne": None}
+    )
     for r in repo.search(q):
-        idt = r["ListIdentityRaw_Response"]
+        drow = r.get("data", None)
+        if not drow:
+            continue
+
+        drow = ujson.loads(drow)
+        if not "ListIdentityRaw_Response" in drow:
+            continue
+
+        idt = drow["ListIdentityRaw_Response"]
         data = parse_list_identity(idt, vendors, devices)
         repo.fingerprint(r["host"], r["id"], data, protocol=r["protocol"])
 
+
 def enip_fingerprinter() -> Module:
-    return (
-        Module(
-            "f", "ethernetip",
-            flags=EnipFlags, 
-            run_fn=run,
-        )
+    return Module(
+        "f",
+        "ethernetip",
+        flags=EnipFlags,
+        run_fn=run,
     )

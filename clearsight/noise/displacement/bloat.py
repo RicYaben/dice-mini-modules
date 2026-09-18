@@ -1,48 +1,63 @@
-from dice.modules import Module, new_module
-
-from tdigest import TDigest
 import math
 
-def bloated_q(threshold: int | None = None) -> str:
-    limit_clause = ""
-    if threshold:
-        # having more services than the threshold
-        limit_clause = f"HAVING COUNT(DISTINCT f.port) > {threshold}"
-    return """
-    SELECT
-        f.host,
-        COUNT(DISTINCT f.port) AS fpcount,
-        COUNT(DISTINCT z.port) AS zpcount,
-        LIST(DISTINCT f.port) as fports,
-        LIST(DISTINCT z.port) as zports,
-    FROM fingerprint AS f
-    LEFT JOIN zgrab2_records AS z
-        ON f.host = z.ip
-    GROUP BY f.host
-    {clause}
-    ORDER BY zports DESC
-    """.format(clause=limit_clause)
+from dice.sdk import Module
+from dice.shared.models import Fingerprint, Record
+from dice.shared.repository import TRepo
+from sqlalchemy import distinct, func
+from sqlmodel import exists, literal_column, select
+from tdigest import TDigest
 
-def model_host_ports(ports) -> TDigest: 
+
+def bloated_q(threshold: int | None = None):
+    f = Fingerprint
+    r = Record
+
+    pcount = func.count(distinct(r.port)).label("pcount")
+    ports = func.group_concat(distinct(r.port)).label("ports")
+
+    has_fingerprint = exists(select(1).where(f.record_id == r.id))
+
+    stmt = (
+        select(
+            r.host,
+            pcount,
+            ports,
+        )
+        .select_from(r)
+        .where(has_fingerprint)
+        .group_by(r.host)
+        .order_by(pcount.desc())
+    )
+
+    if threshold is not None:
+        stmt = stmt.having(pcount > literal_column(str(threshold)))
+
+    return stmt
+
+
+def model_host_ports(ports) -> TDigest:
     digest = TDigest()
     for r in ports:
-        digest.update(r["fpcount"])
+        digest.update(r["pcount"])
     return digest
 
-def bloated_tag(mod: Module) -> None:
-    repo = mod.repo()
-    ports = repo.query(bloated_q())
 
+def bloated_tag(repo: TRepo, *args, **kwargs) -> None:
+    ports = repo.search(str(bloated_q()))
     model = model_host_ports(ports)
+
     # need to round, this normally will be between 1 and 5
-    threshold =  int(math.ceil(model.percentile(75)))
+    threshold = int(math.ceil(model.percentile(75)))
     print(f"Threshold: {threshold}")
-    
+
     q = bloated_q(threshold)
-    mod.itemize(q, lambda x: mod.store(mod.make_tag(x.host, "bloated", f"has {x.zpcount} services")), orient="tuples")
+    for r in repo.search(str(q)):
+        repo.tag(r["host"], "bloated", f"has {r.pcount} services")
 
-def bloated_init(mod: Module) -> None:
-    mod.register_tag("bloated", "Gaussian distribution of the number of ports")
 
-def make_bloated_module() -> Module:
-    return new_module("t", "bloated", bloated_tag, bloated_init)
+def bloated_module() -> Module:
+    return Module(
+        "t",
+        "bloated",
+        run_fn=bloated_tag,
+    ).add_tag("bloated", "Gaussian distribution of the number of ports")

@@ -1,7 +1,6 @@
-from dice.shared.repository import CRepo
-from dice.shared.query import query
-from dice.sdk import Module
+from dice.sdk import Module, query
 from dice.shared.models import Fingerprint
+from dice.shared.repository import CRepo
 
 
 def run(repo: CRepo, *args, **kwargs) -> None:
@@ -9,13 +8,12 @@ def run(repo: CRepo, *args, **kwargs) -> None:
     for r in repo.search(q):
         repo.label(r["id"], "anonymous-connection")
 
+
 def iec104_classifier() -> Module:
-    return (
-        Module(
-            "c", "iec104", 
-            run_fn=run,
-        ).add_label(
-            "anonymous-connection",
-            "allows unauthenticatied clients to communicate"
-        )
+    return Module(
+        "c",
+        "iec104",
+        run_fn=run,
+    ).add_label(
+        "anonymous-connection", "allows unauthenticatied clients to communicate"
     )

@@ -1,19 +1,14 @@
-import logging
 import ipaddress
+import logging
 
-import pandas as pd
 import numpy as np
-
-from dice.internal.modules import new_registry
-from dice.shared.repository import TRepo
+import pandas as pd
+from dice.modules import registry
+from dice.sdk import Flags, Module, query
 from dice.shared.models import Host
-from dice.experimental import query
-
-from dice.sdk import Flags, Module
-
+from dice.shared.repository import TRepo
 from sklearn.linear_model import LinearRegression
 from sklearn.mixture import GaussianMixture
-
 
 # def describe_condensation(df: pd.DataFrame) -> pd.DataFrame:
 #     """
@@ -57,6 +52,7 @@ from sklearn.mixture import GaussianMixture
 #     summary = pd.DataFrame(grouped)
 #     return summary.sort_values("slash")
 
+
 def model_condensation(df: pd.DataFrame) -> None:
     df["slash"] = df["prefix"].apply(lambda p: f"/{ipaddress.ip_network(p).prefixlen}")
     df["size"] = [2 ** (32 - ipaddress.ip_network(p).prefixlen) for p in df["prefix"]]
@@ -87,23 +83,29 @@ def dense(pfx: list[dict], t: float) -> list[str]:
     dense = df[df["p_dense"] > t]
     return dense["prefix"].tolist()
 
+
 class DFlags(Flags):
     threshold: float = 0.95
+
 
 def run(repo: TRepo, flags: DFlags, logger: logging.Logger) -> None:
     q = query(Host, fields=["prefix"], prefix__ne=None)
     pfx = repo.search(q).all()
 
     dpfx = dense(pfx, flags.threshold)
-    
-    for r in repo.search(query(Host, fields=["ip"], prefix__in=dpfx)).all():
-        repo.tag(r["ip"], "dense", f'density: {r["p_dense"]:.3f}')
 
-condensation_reg = new_registry("condensation").register(
-        Module(
-            "t", "condensation",
-            flags=DFlags,
-            run_fn=run,
-        )
-        .add_tag("dense", "condensation model to estimate whether a prefix is abnormally populated based on how dense other prefixes of similar size are")
+    for r in repo.search(query(Host, fields=["ip"], prefix__in=dpfx)).all():
+        repo.tag(r["ip"], "dense", f"density: {r['p_dense']:.3f}")
+
+
+condensation = registry("condensation").register(
+    Module(
+        "t",
+        "condensation",
+        flags=DFlags,
+        run_fn=run,
+    ).add_tag(
+        "dense",
+        "condensation model to estimate whether a prefix is abnormally populated based on how dense other prefixes of similar size are",
     )
+)

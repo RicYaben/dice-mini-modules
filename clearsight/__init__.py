@@ -1,5 +1,3 @@
-from .registry import registry
+from .registry import clearsight
 
-__all__ = [
-    "registry"
-]
+__all__ = ["clearsight"]

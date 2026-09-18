@@ -1,12 +1,14 @@
-from dice.sdk import Module
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar
 
-from typing import Callable, Any, Generic, TypeVar
+from dice.sdk import Module
 
 type EvaluatorWrapper = Callable[[Module], NoiseEvaluator]
 type NoiseEvaluator = Callable[[Any], None]
 type NoiseHandler = Callable[[Module], None]
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class NoiseGenericFactory(Generic[T]):
     def __init__(self, mod: Module):
@@ -15,11 +17,11 @@ class NoiseGenericFactory(Generic[T]):
         self._builders: dict[str, Callable] = {}
         self._default: T | None = None
 
-    def build(self, name: str="") -> T | None:
+    def build(self, name: str = "") -> T | None:
         builder = self._builders.get(name, None)
-        if not builder: 
+        if not builder:
             return self._default
-        
+
         h = builder(self.mod)
         self._cache[name] = h
         return h
@@ -28,16 +30,19 @@ class NoiseGenericFactory(Generic[T]):
         if name in self._cache:
             return self._cache[name]
         return self.build(name)
-    
-    def set_default(self, ev: T | None) -> 'NoiseGenericFactory':
+
+    def set_default(self, ev: T | None) -> "NoiseGenericFactory":
         self._default = ev
         return self
-    
+
     def supported(self) -> list[str]:
         return list(self._builders.keys())
 
+
 class NoiseEvaluatorFactory(NoiseGenericFactory[NoiseEvaluator]):
-    def add(self, name: str, ev: EvaluatorWrapper | NoiseEvaluator) -> 'NoiseEvaluatorFactory':
+    def add(
+        self, name: str, ev: EvaluatorWrapper | NoiseEvaluator
+    ) -> "NoiseEvaluatorFactory":
         match ev:
             case EvaluatorWrapper.__value__:
                 self._builders[name] = lambda _: ev(self.mod)
@@ -46,12 +51,13 @@ class NoiseEvaluatorFactory(NoiseGenericFactory[NoiseEvaluator]):
         self._cache.pop(name, None)
         return self
 
+
 class NoiseHandlerFactory(NoiseGenericFactory[NoiseHandler]):
-    def add(self, name: str, h: NoiseHandler) -> 'NoiseHandlerFactory':
+    def add(self, name: str, h: NoiseHandler) -> "NoiseHandlerFactory":
         self._builders[name] = lambda _: h(self.mod)
         self._cache.pop(name, None)
         return self
-    
+
     def get_builders(self) -> list[str]:
         return list(self._builders.keys())
 

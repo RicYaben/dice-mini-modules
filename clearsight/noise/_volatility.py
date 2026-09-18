@@ -1,10 +1,13 @@
-from dice.modules import Module, new_module, new_registry
-
-from typing import Any, Generator
 from difflib import ndiff
 
-import pandas as pd
+# from dice.shared.modules import new_module
+from typing import Any, Generator
+
 import numpy as np
+import pandas as pd
+from dice.modules import registry
+from dice.sdk import Module
+
 
 def fmt_diff(*values: Any) -> str:
     """
@@ -23,10 +26,11 @@ def fmt_diff(*values: Any) -> str:
     for i in range(len(values) - 1):
         old = str(values[i]).splitlines()
         new = str(values[i + 1]).splitlines()
-        diff = '\n  '.join(ndiff(old, new))
-        diffs.append(f"Diff {i} → {i+1}:\n  {diff}")
+        diff = "\n  ".join(ndiff(old, new))
+        diffs.append(f"Diff {i} → {i + 1}:\n  {diff}")
 
-    return '\n'.join(diffs)
+    return "\n".join(diffs)
+
 
 def is_equal(*vals: Any) -> bool:
     """Safely compare an arbitrary number of values, handling lists, arrays, and objects."""
@@ -37,13 +41,16 @@ def is_equal(*vals: Any) -> bool:
 
     for other in vals[1:]:
         # If either value is a list or ndarray, convert both to np.array and compare
-        if isinstance(first, (list, np.ndarray)) or isinstance(other, (list, np.ndarray)):
+        if isinstance(first, (list, np.ndarray)) or isinstance(
+            other, (list, np.ndarray)
+        ):
             if not np.array_equal(np.asarray(first), np.asarray(other)):
                 return False
         else:
             if first != other:
                 return False
     return True
+
 
 def eval_diff(df: pd.DataFrame) -> str | None:
     # we only care about the fps "data_*" fields
@@ -53,31 +60,29 @@ def eval_diff(df: pd.DataFrame) -> str | None:
         vals = df[col].to_list()
         if not is_equal(*vals):
             d = fmt_diff(vals)
-            difs.append(f"- {col.replace("data_", "")}:\n{d}")
+            difs.append(f"- {col.replace('data_', '')}:\n{d}")
 
     if difs:
         return "\n".join(difs)
-        
+
+
 def eval_intermitent(fps: list[Any]) -> str | None:
-    'check if there is data, or if there is an error of not available (no data)'
+    "check if there is data, or if there is an error of not available (no data)"
 
     # io-timeout, connection-timeout, or unknown-error?
     avi = list(filter(lambda s: s["data"], fps))
     if len(avi) and len(avi) < len(fps):
-        if avi[0] :
+        if avi[0]:
             return "became unavailable after the first scan"
         return "eventually became available"
-    
+
+
 def pull_next(rows) -> Generator[tuple[dict, list[Any]], None, None]:
     # we get rows order by ip,protocol,port
-    summary = {"host": None,"protocol": None,"port": None}
+    summary = {"host": None, "protocol": None, "port": None}
     res = []
     for row in rows:
-        curr = {
-            "host": row["host"],
-            "protocol": row["protocol"],
-            "port": row["port"]
-        }
+        curr = {"host": row["host"], "protocol": row["protocol"], "port": row["port"]}
 
         if (summary["host"] is not None) and (summary != curr):
             yield summary, res
@@ -89,6 +94,7 @@ def pull_next(rows) -> Generator[tuple[dict, list[Any]], None, None]:
     if res:
         yield summary, res
 
+
 def get_mtd_fp_query() -> str:
     return """
     SELECT f.*
@@ -96,35 +102,55 @@ def get_mtd_fp_query() -> str:
     ORDER BY f.host, f.protocol, f.port;
     """
 
+
 def fetch_mtd_batches(mod: Module) -> Generator[tuple[dict, list[Any]], None, None]:
     q = get_mtd_fp_query()
     rows = mod.repo().query(q)
     for summary, fps in pull_next(rows):
         yield summary, fps
 
+
 def tag_mtd_intermitent(mod: Module) -> None:
     for summary, fps in fetch_mtd_batches(mod):
         if d := eval_diff(pd.DataFrame.from_records(fps)):
-            mod.store(mod.make_tag(summary["host"], "mtd-different", d, summary["protocol"], summary["port"]))
+            mod.store(
+                mod.make_tag(
+                    summary["host"],
+                    "mtd-different",
+                    d,
+                    summary["protocol"],
+                    summary["port"],
+                )
+            )
+
 
 def tag_mtd_different(mod: Module) -> None:
     for summary, fps in fetch_mtd_batches(mod):
         if idet := eval_intermitent(fps):
-            mod.store(mod.make_tag(summary["host"], "mtd-intermitent", idet, summary["protocol"], summary["port"]))
+            mod.store(
+                mod.make_tag(
+                    summary["host"],
+                    "mtd-intermitent",
+                    idet,
+                    summary["protocol"],
+                    summary["port"],
+                )
+            )
+
 
 def volatility_init(mod: Module) -> None:
     mod.register_tag("mtd-intermitent", "Host appears and dissapear")
     mod.register_tag("mtd-different", "Host changed properties")
 
+
 def make_mtd_inter_module() -> Module:
-    return new_module('t', "mtd-intermitent", tag_mtd_intermitent, volatility_init)
+    return new_module("t", "mtd-intermitent", tag_mtd_intermitent, volatility_init)
+
 
 def make_mtd_diff_module() -> Module:
     return new_module("t", "mtd-different", tag_mtd_different, volatility_init)
 
-mtd_reg = new_registry("mtd").add(
-    make_mtd_diff_module(),
-    make_mtd_inter_module()
-)
 
-volatility_reg = new_registry("volatility").add_group(mtd_reg)
+mtd = registry("mtd").add(make_mtd_diff_module(), make_mtd_inter_module())
+
+volatility = registry("volatility").add_group(mtd_reg)

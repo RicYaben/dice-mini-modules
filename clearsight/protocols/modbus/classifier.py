@@ -1,7 +1,6 @@
-from dice.shared.repository import CRepo
+from dice.sdk import Module, query
 from dice.shared.models import Fingerprint
-from dice.experimental import query
-from dice.sdk import Module
+from dice.shared.repository import CRepo
 
 
 def run(repo: CRepo, *args, **kwargs) -> None:
@@ -11,8 +10,8 @@ def run(repo: CRepo, *args, **kwargs) -> None:
         **{
             "data.vendor__ne": None,
             "data.product_code__ne": None,
-            "data.revision__ne": None
-        }
+            "data.revision__ne": None,
+        },
     )
 
     for r in repo.search(q):
@@ -21,7 +20,8 @@ def run(repo: CRepo, *args, **kwargs) -> None:
 
 def modbus_classifier() -> Module:
     return Module(
-        "c", "modbus",
+        "c",
+        "modbus",
         run_fn=run,
     ).add_label(
         "anonymous-connection", "allows unauthenticatied clients to communicate"

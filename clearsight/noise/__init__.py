@@ -1,18 +1,16 @@
-from dice.modules import new_registry
+from dice.modules import registry
 
-from .condensation import condensation_reg
-from .displacement import displacement_reg
-from .hostility import hostility_reg
-from .volatility import volatility_reg
+from .condensation import condensation
+from .displacement import displacement
+from .hostility import hostility
 
-registry = new_registry("noise")
-registry.add_groups([
-    displacement_reg,
-    volatility_reg,
-    hostility_reg,
-    condensation_reg
-])
+# from .volatility import volatility_reg
 
-__all__ = [
-    "registry"
-]
+noise = registry("noise").add_groups(
+    [
+        displacement,
+        # volatility_reg,
+        hostility,
+        condensation,
+    ]
+)

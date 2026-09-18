@@ -1,7 +1,8 @@
-from dice.modules import Module, ModuleHandler, new_module
-from dice.models import  Host
 from dice.config import logger
-from dice.query import query_db
+from dice.query import query
+
+from dice.shared.models import Host
+from dice.sdk import Module
 
 import requests
 import pandas as pd

@@ -1,4 +1,4 @@
-from dice.modules import new_registry
+from dice.ask import new_registry
 from .scanner import make_scanners
 
 registry = new_registry("cti").add(*make_scanners())
